@@ -1,6 +1,11 @@
 package ke.nucho.sportshublive.data.api
 
 import android.util.Log
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonDeserializationContext
+import com.google.gson.JsonDeserializer
+import com.google.gson.JsonElement
+import com.google.gson.reflect.TypeToken
 import ke.nucho.sportshublive.data.models.*
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -11,7 +16,37 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Query
 import java.io.IOException
+import java.lang.reflect.Type
 import java.util.concurrent.TimeUnit
+
+// ==================== CUSTOM DESERIALIZERS ====================
+
+/**
+ * Custom deserializer to handle API errors that can be arrays or objects
+ */
+class ErrorsDeserializer : JsonDeserializer<List<String>> {
+    override fun deserialize(
+        json: JsonElement?,
+        typeOfT: Type?,
+        context: JsonDeserializationContext?
+    ): List<String> {
+        if (json == null || json.isJsonNull) return emptyList()
+
+        return when {
+            json.isJsonArray -> {
+                json.asJsonArray.mapNotNull {
+                    if (it.isJsonPrimitive) it.asString else null
+                }
+            }
+            json.isJsonObject -> {
+                // If errors is an object, convert to list of error messages
+                json.asJsonObject.entrySet().map { "${it.key}: ${it.value}" }
+            }
+            json.isJsonPrimitive -> listOf(json.asString)
+            else -> emptyList()
+        }
+    }
+}
 
 // ==================== API INTERFACES ====================
 
@@ -59,6 +94,32 @@ interface FootballApiService {
 
     @GET("predictions")
     suspend fun getPredictions(@Query("fixture") fixtureId: Int): retrofit2.Response<PredictionsResponse>
+
+    // ==================== MATCH DETAIL ENDPOINTS ====================
+
+    /**
+     * Get fixture statistics
+     */
+    @GET("fixtures/statistics")
+    suspend fun getFixtureStatistics(
+        @Query("fixture") fixtureId: Int
+    ): retrofit2.Response<FixtureStatsResponse>
+
+    /**
+     * Get fixture events (goals, cards, substitutions)
+     */
+    @GET("fixtures/events")
+    suspend fun getFixtureEvents(
+        @Query("fixture") fixtureId: Int
+    ): retrofit2.Response<FixtureEventsResponse>
+
+    /**
+     * Get fixture lineups
+     */
+    @GET("fixtures/lineups")
+    suspend fun getFixtureLineups(
+        @Query("fixture") fixtureId: Int
+    ): retrofit2.Response<FixtureLineupsResponse>
 }
 
 /**
@@ -70,7 +131,10 @@ interface BasketballApiService {
     suspend fun getLiveGames(@Query("live") live: String = "all"): retrofit2.Response<BasketballResponse>
 
     @GET("games")
-    suspend fun getGamesByDate(@Query("date") date: String): retrofit2.Response<BasketballResponse>
+    suspend fun getGamesByDate(
+        @Query("date") date: String,
+        @Query("timezone") timezone: String = "Africa/Nairobi"
+    ): retrofit2.Response<BasketballResponse>
 
     @GET("games")
     suspend fun getGamesByLeague(
@@ -94,7 +158,10 @@ interface HockeyApiService {
     suspend fun getLiveGames(@Query("live") live: String = "all"): retrofit2.Response<HockeyResponse>
 
     @GET("games")
-    suspend fun getGamesByDate(@Query("date") date: String): retrofit2.Response<HockeyResponse>
+    suspend fun getGamesByDate(
+        @Query("date") date: String,
+        @Query("timezone") timezone: String = "Africa/Nairobi"
+    ): retrofit2.Response<HockeyResponse>
 
     @GET("games")
     suspend fun getGamesByLeague(
@@ -121,7 +188,9 @@ interface Formula1ApiService {
     ): retrofit2.Response<Formula1Response>
 
     @GET("races")
-    suspend fun getRacesByDate(@Query("date") date: String): retrofit2.Response<Formula1Response>
+    suspend fun getRacesBySeason(
+        @Query("season") season: Int
+    ): retrofit2.Response<Formula1Response>
 
     @GET("rankings/drivers")
     suspend fun getDriverStandings(@Query("season") season: Int): retrofit2.Response<F1DriversResponse>
@@ -136,7 +205,10 @@ interface VolleyballApiService {
     suspend fun getLiveGames(@Query("live") live: String = "all"): retrofit2.Response<VolleyballResponse>
 
     @GET("games")
-    suspend fun getGamesByDate(@Query("date") date: String): retrofit2.Response<VolleyballResponse>
+    suspend fun getGamesByDate(
+        @Query("date") date: String,
+        @Query("timezone") timezone: String = "Africa/Nairobi"
+    ): retrofit2.Response<VolleyballResponse>
 
     @GET("games")
     suspend fun getGamesByLeague(
@@ -160,7 +232,10 @@ interface RugbyApiService {
     suspend fun getLiveGames(@Query("live") live: String = "all"): retrofit2.Response<RugbyResponse>
 
     @GET("games")
-    suspend fun getGamesByDate(@Query("date") date: String): retrofit2.Response<RugbyResponse>
+    suspend fun getGamesByDate(
+        @Query("date") date: String,
+        @Query("timezone") timezone: String = "Africa/Nairobi"
+    ): retrofit2.Response<RugbyResponse>
 
     @GET("games")
     suspend fun getGamesByLeague(
@@ -204,7 +279,24 @@ object RetrofitClient {
     }
 
     /**
+     * Header Logging Interceptor for debugging
+     */
+    private val headerLoggingInterceptor = Interceptor { chain ->
+        val request = chain.request()
+        if (DEBUG) {
+            Log.d(TAG, "═══════════════════════════════════════")
+            Log.d(TAG, "🔑 REQUEST DETAILS")
+            Log.d(TAG, "URL: ${request.url}")
+            Log.d(TAG, "Host Header: ${request.header("x-rapidapi-host")}")
+            Log.d(TAG, "API Key: ${request.header("x-rapidapi-key")?.take(12)}...")
+            Log.d(TAG, "═══════════════════════════════════════")
+        }
+        chain.proceed(request)
+    }
+
+    /**
      * API Key Interceptor with automatic retry on rate limit
+     * FIXED VERSION - Proper retry logic
      */
     private class ApiKeyInterceptor(private val host: String) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
@@ -226,57 +318,105 @@ object RetrofitClient {
                     response?.close() // Close previous response if exists
                     response = chain.proceed(request)
 
+                    // Log response details for debugging
+                    if (DEBUG && response.code !in 200..299) {
+                        try {
+                            val bodyString = response.peekBody(2048).string()
+                            Log.d(TAG, "📥 Response ${response.code} for $host")
+                            Log.d(TAG, "Body preview: ${bodyString.take(500)}")
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Could not peek response body: ${e.message}")
+                        }
+                    }
+
                     when (response.code) {
+                        in 200..299 -> {
+                            // ✅ SUCCESS - Return immediately
+                            ApiKeyManager.markKeyAsWorking(currentApiKey)
+                            Log.d(TAG, "✅ Success (${response.code}) for $host with key ${maskKey(currentApiKey)}")
+                            return response
+                        }
                         429 -> {
-                            // Rate limit exceeded
-                            Log.w(TAG, "Rate limit exceeded (429) on attempt $attempt for host: $host")
+                            // ⚠️ RATE LIMIT
+                            Log.w(TAG, "⚠️ Rate limit (429) attempt $attempt/$MAX_RETRIES for $host")
+                            Log.w(TAG, "   Key: ${maskKey(currentApiKey)}")
                             ApiKeyManager.markKeyAsFailed(currentApiKey)
 
                             if (attempt < MAX_RETRIES) {
                                 response.close()
-                                Thread.sleep(RETRY_DELAY_MS * attempt) // Exponential backoff
-                                currentApiKey = ApiKeyManager.getNextApiKey() // Get next key
-                                continue
+                                val delayMs = RETRY_DELAY_MS * attempt
+                                Log.d(TAG, "   Waiting ${delayMs}ms before retry...")
+                                Thread.sleep(delayMs)
+                                currentApiKey = ApiKeyManager.getNextApiKey()
+                                Log.d(TAG, "   Retrying with key: ${maskKey(currentApiKey)}")
+                                // Continue to next iteration
+                            } else {
+                                // Last attempt failed
+                                Log.e(TAG, "❌ All retries exhausted for rate limit")
+                                return response
                             }
                         }
                         401, 403 -> {
-                            // Invalid API key
-                            Log.e(TAG, "Invalid API key (${response.code}) for host: $host")
+                            // ❌ AUTHENTICATION ERROR
+                            Log.e(TAG, "❌ Auth error (${response.code}) attempt $attempt/$MAX_RETRIES")
+                            Log.e(TAG, "   Host: $host")
+                            Log.e(TAG, "   Key: ${maskKey(currentApiKey)}")
+
                             ApiKeyManager.markKeyAsFailed(currentApiKey)
 
                             if (attempt < MAX_RETRIES) {
                                 response.close()
                                 currentApiKey = ApiKeyManager.getNextApiKey()
-                                continue
+                                Log.d(TAG, "   Switching to next key: ${maskKey(currentApiKey)}")
+                                // Continue to next iteration
+                            } else {
+                                // Last attempt failed
+                                Log.e(TAG, "❌ All retries exhausted for auth errors")
+                                Log.e(TAG, "❌ Check your API subscription and endpoint permissions!")
+                                return response
                             }
                         }
-                        in 200..299 -> {
-                            // Success - mark key as working
-                            ApiKeyManager.markKeyAsWorking(currentApiKey)
-                            return response
-                        }
                         else -> {
-                            // Other errors - don't retry
+                            // Other HTTP errors - don't retry
+                            Log.w(TAG, "⚠️ HTTP ${response.code} for $host: ${response.message}")
                             return response
                         }
                     }
 
-                    return response
-
                 } catch (e: IOException) {
                     lastException = e
-                    Log.e(TAG, "Network error on attempt $attempt: ${e.message}")
+                    Log.e(TAG, "❌ Network error attempt $attempt/$MAX_RETRIES: ${e.message}", e)
+
+                    response?.close()
 
                     if (attempt < MAX_RETRIES) {
-                        Thread.sleep(RETRY_DELAY_MS * attempt)
+                        val delayMs = RETRY_DELAY_MS * attempt
+                        Log.d(TAG, "   Waiting ${delayMs}ms before retry...")
+                        Thread.sleep(delayMs)
                         currentApiKey = ApiKeyManager.getNextApiKey()
+                        Log.d(TAG, "   Retrying with key: ${maskKey(currentApiKey)}")
+                    } else {
+                        // All retries exhausted
+                        Log.e(TAG, "❌ Network request failed after $MAX_RETRIES attempts")
+                        throw lastException
                     }
                 }
             }
 
-            // All retries failed
-            response?.let { return it }
+            // This should never be reached due to returns/throws above
+            response?.let {
+                Log.e(TAG, "⚠️ Unexpected code path - returning last response")
+                return it
+            }
             throw lastException ?: IOException("Request failed after $MAX_RETRIES attempts")
+        }
+
+        private fun maskKey(key: String): String {
+            return if (key.length > 8) {
+                "${key.take(8)}...${key.takeLast(4)}"
+            } else {
+                "****"
+            }
         }
     }
 
@@ -285,6 +425,7 @@ object RetrofitClient {
      */
     private fun createApiSportsClient(host: String): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(headerLoggingInterceptor) // Add header logging first
             .addInterceptor(ApiKeyInterceptor(host))
             .addInterceptor(loggingInterceptor)
             .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
@@ -295,13 +436,21 @@ object RetrofitClient {
     }
 
     /**
-     * Create Retrofit instance
+     * Create Retrofit instance with custom Gson for error handling
      */
     private fun createRetrofit(baseUrl: String, client: OkHttpClient): Retrofit {
+        val gson = GsonBuilder()
+            .registerTypeAdapter(
+                object : TypeToken<List<String>>() {}.type,
+                ErrorsDeserializer()
+            )
+            .setLenient() // Allow lenient JSON parsing
+            .create()
+
         return Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
     }
 

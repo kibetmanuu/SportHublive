@@ -3,12 +3,13 @@ package ke.nucho.sportshublive.data.api
 import android.util.Log
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import kotlinx.coroutines.*
+import kotlinx.coroutines.tasks.await  // ✅ ADD THIS IMPORT
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
 /**
- * API Key Manager with Remote Config and Automatic Reset
- * Manages multiple API keys from Firebase Remote Config
+ * API Key Manager with Remote Config and Automatic Refresh
+ * Manages multiple API keys from Firebase Remote Config with auto-refresh
  */
 object ApiKeyManager {
     private const val TAG = "ApiKeyManager"
@@ -17,6 +18,7 @@ object ApiKeyManager {
     private const val REMOTE_CONFIG_API_KEYS = "api_keys_json"
     private const val REMOTE_CONFIG_SELECTION_MODE = "api_key_selection_mode"
     private const val REMOTE_CONFIG_RESET_INTERVAL = "api_key_reset_interval_hours"
+    private const val REMOTE_CONFIG_REFRESH_INTERVAL = "remote_config_refresh_interval_minutes"
 
     // Default fallback keys
     private val DEFAULT_API_KEYS = listOf(
@@ -32,6 +34,15 @@ object ApiKeyManager {
     // Reset interval in hours (default 0.25 = 15 minutes)
     private var resetIntervalHours: Double = 0.25
 
+    // Remote Config refresh interval in minutes (default 30 minutes)
+    private var remoteConfigRefreshMinutes: Long = 30
+
+    // Store Remote Config reference using WeakReference to prevent memory leak
+    // ✅ FIXED: Use WeakReference to avoid memory leak
+    private var remoteConfigRef: java.lang.ref.WeakReference<FirebaseRemoteConfig>? = null
+    private val remoteConfig: FirebaseRemoteConfig?
+        get() = remoteConfigRef?.get()
+
     // Track current key index for round-robin
     private val currentKeyIndex = AtomicInteger(0)
 
@@ -41,14 +52,31 @@ object ApiKeyManager {
     // Track key usage count for analytics
     private val keyUsageCount = mutableMapOf<String, Int>()
 
-    // Coroutine scope for automatic reset
+    // Coroutine scope for automatic operations
     private var resetJob: Job? = null
+    private var remoteConfigRefreshJob: Job? = null
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     /**
      * Initialize and load API keys from Firebase Remote Config
      */
     fun initialize(remoteConfig: FirebaseRemoteConfig) {
+        this.remoteConfigRef = java.lang.ref.WeakReference(remoteConfig)
+
+        // Load initial configuration
+        loadConfiguration(remoteConfig)
+
+        // Start automatic reset timer
+        startAutomaticReset()
+
+        // Start automatic Remote Config refresh
+        startRemoteConfigAutoRefresh()
+    }
+
+    /**
+     * Load configuration from Remote Config
+     */
+    private fun loadConfiguration(remoteConfig: FirebaseRemoteConfig) {
         try {
             // Load selection mode
             selectionMode = remoteConfig.getString(REMOTE_CONFIG_SELECTION_MODE)
@@ -58,6 +86,10 @@ object ApiKeyManager {
             resetIntervalHours = remoteConfig.getDouble(REMOTE_CONFIG_RESET_INTERVAL)
                 .takeIf { it > 0 } ?: 0.25
 
+            // Load Remote Config refresh interval (in minutes)
+            remoteConfigRefreshMinutes = remoteConfig.getLong(REMOTE_CONFIG_REFRESH_INTERVAL)
+                .takeIf { it > 0 } ?: 30
+
             // Load API keys from Remote Config
             val keysJson = remoteConfig.getString(REMOTE_CONFIG_API_KEYS)
 
@@ -65,10 +97,17 @@ object ApiKeyManager {
                 val parsedKeys = parseApiKeysJson(keysJson)
 
                 if (parsedKeys.isNotEmpty()) {
+                    val oldKeysCount = apiKeys.size
                     apiKeys = parsedKeys
+
+                    if (oldKeysCount != apiKeys.size) {
+                        Log.d(TAG, "🔄 API keys updated: $oldKeysCount → ${apiKeys.size} keys")
+                    }
+
                     Log.d(TAG, "✓ Loaded ${apiKeys.size} API keys from Remote Config")
                     Log.d(TAG, "Selection mode: $selectionMode")
                     Log.d(TAG, "Reset interval: ${resetIntervalHours * 60} minutes")
+                    Log.d(TAG, "Remote Config refresh: every $remoteConfigRefreshMinutes minutes")
                 } else {
                     Log.w(TAG, "Failed to parse API keys, using defaults")
                     apiKeys = DEFAULT_API_KEYS
@@ -78,13 +117,51 @@ object ApiKeyManager {
                 apiKeys = DEFAULT_API_KEYS
             }
 
-            // Start automatic reset timer
-            startAutomaticReset()
-
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading API keys from Remote Config", e)
+            Log.e(TAG, "Error loading configuration from Remote Config", e)
             apiKeys = DEFAULT_API_KEYS
         }
+    }
+
+    /**
+     * Start automatic Remote Config refresh
+     */
+    private fun startRemoteConfigAutoRefresh() {
+        // Cancel existing job if any
+        remoteConfigRefreshJob?.cancel()
+
+        val config = remoteConfig ?: return
+
+        remoteConfigRefreshJob = coroutineScope.launch {
+            while (isActive) {
+                // Wait for the refresh interval
+                delay(remoteConfigRefreshMinutes * 60 * 1000)
+
+                try {
+                    Log.d(TAG, "🔄 Fetching latest Remote Config...")
+
+                    // Get fresh reference in case it was garbage collected
+                    val currentConfig = remoteConfig ?: break
+
+                    // Fetch and activate new config
+                    val success = withContext(Dispatchers.IO) {
+                        currentConfig.fetchAndActivate().await()
+                    }
+
+                    if (success) {
+                        Log.d(TAG, "✅ Remote Config updated successfully")
+                        loadConfiguration(currentConfig)
+                    } else {
+                        Log.d(TAG, "ℹ️ Remote Config unchanged")
+                    }
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Error fetching Remote Config: ${e.message}")
+                }
+            }
+        }
+
+        Log.d(TAG, "Started Remote Config auto-refresh: every $remoteConfigRefreshMinutes minutes")
     }
 
     /**
@@ -217,6 +294,33 @@ object ApiKeyManager {
     }
 
     /**
+     * Manually refresh Remote Config NOW
+     */
+    fun refreshRemoteConfigNow() {
+        val config = remoteConfig ?: return
+
+        coroutineScope.launch {
+            try {
+                Log.d(TAG, "🔄 Manual Remote Config refresh triggered...")
+
+                val success = withContext(Dispatchers.IO) {
+                    config.fetchAndActivate().await()
+                }
+
+                if (success) {
+                    Log.d(TAG, "✅ Remote Config refreshed successfully")
+                    loadConfiguration(config)
+                } else {
+                    Log.d(TAG, "ℹ️ Remote Config unchanged")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error refreshing Remote Config: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Get current API key without rotation
      */
     fun getCurrentApiKey(): String {
@@ -259,10 +363,11 @@ object ApiKeyManager {
     }
 
     /**
-     * Reload keys from Remote Config
+     * Reload keys from Remote Config (deprecated - use refreshRemoteConfigNow)
      */
+    @Deprecated("Use refreshRemoteConfigNow() instead")
     fun reloadFromRemoteConfig(remoteConfig: FirebaseRemoteConfig) {
-        initialize(remoteConfig)
+        loadConfiguration(remoteConfig)
     }
 
     /**
@@ -276,6 +381,7 @@ object ApiKeyManager {
             appendLine("- Failed keys: ${failedKeys.size}")
             appendLine("- Selection mode: $selectionMode")
             appendLine("- Reset interval: ${resetIntervalHours * 60} minutes")
+            appendLine("- Remote Config refresh: every $remoteConfigRefreshMinutes minutes")
             appendLine("- Usage stats: $keyUsageCount")
             if (failedKeys.isNotEmpty()) {
                 appendLine("- Failed keys timestamps:")
@@ -292,6 +398,9 @@ object ApiKeyManager {
      */
     fun cleanup() {
         resetJob?.cancel()
+        remoteConfigRefreshJob?.cancel()
         coroutineScope.cancel()
+        remoteConfigRef?.clear()
+        remoteConfigRef = null
     }
 }

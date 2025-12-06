@@ -1,22 +1,25 @@
 package ke.nucho.sportshublive.data.models
 
 import com.google.gson.annotations.SerializedName
-
-// ==================== API-FOOTBALL MODELS ====================
-
-
-data class FootballResponse(
-    val get: String,
-    val parameters: Map<String, String>,
-    val errors: List<String>,
-    val results: Int,
-    val paging: Paging,
-    val response: List<Fixture>
-)
+import com.google.gson.annotations.JsonAdapter
+import ke.nucho.sportshublive.data.api.ErrorsDeserializer
+// ==================== COMMON MODELS ====================
 
 data class Paging(
     val current: Int,
     val total: Int
+)
+
+// ==================== API-FOOTBALL MODELS ====================
+
+data class FootballResponse(
+    val get: String,
+    val parameters: Map<String, String>,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
+    val results: Int,
+    val paging: Paging,
+    val response: List<Fixture>
 )
 
 data class Fixture(
@@ -89,10 +92,135 @@ data class Score(
     val penalty: Goals
 )
 
+// ==================== FIXTURE STATISTICS ====================
+
+data class FixtureStatsResponse(
+    val get: String?,
+    val parameters: Map<String, Any>?,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
+    val results: Int?,
+    val paging: Paging?,
+    val response: List<FixtureStatistics>?
+)
+
+data class FixtureStatistics(
+    val team: StatTeam,
+    val statistics: List<Statistic>
+)
+
+data class StatTeam(
+    val id: Int,
+    val name: String,
+    val logo: String
+)
+
+data class Statistic(
+    val type: String,
+    val value: Any? // Can be Int, String, or null
+)
+
+// ==================== FIXTURE EVENTS ====================
+
+data class FixtureEventsResponse(
+    val get: String?,
+    val parameters: Map<String, Any>?,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
+    val results: Int?,
+    val paging: Paging?,
+    val response: List<FixtureEvent>?
+)
+
+data class FixtureEvent(
+    val time: EventTime,
+    val team: EventTeam,
+    val player: EventPlayer,
+    val assist: EventPlayer?,
+    val type: String, // "Goal", "Card", "subst"
+    val detail: String, // "Normal Goal", "Yellow Card", etc.
+    val comments: String?
+)
+
+data class EventTime(
+    val elapsed: Int,
+    val extra: Int?
+)
+
+data class EventTeam(
+    val id: Int,
+    val name: String,
+    val logo: String
+)
+
+data class EventPlayer(
+    val id: Int?,
+    val name: String
+)
+
+// ==================== FIXTURE LINEUPS ====================
+
+data class FixtureLineupsResponse(
+    val get: String?,
+    val parameters: Map<String, Any>?,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
+    val results: Int?,
+    val paging: Paging?,
+    val response: List<FixtureLineup>?
+)
+
+data class FixtureLineup(
+    val team: LineupTeam,
+    val formation: String?,
+    val startXI: List<LineupPlayer>?,
+    val substitutes: List<LineupPlayer>?,
+    val coach: LineupCoach?
+)
+
+data class LineupTeam(
+    val id: Int,
+    val name: String,
+    val logo: String,
+    val colors: TeamColors?
+)
+
+data class TeamColors(
+    val player: PlayerColors?,
+    val goalkeeper: PlayerColors?
+)
+
+data class PlayerColors(
+    val primary: String?,
+    val number: String?,
+    val border: String?
+)
+
+data class LineupPlayer(
+    val player: PlayerInfo
+)
+
+data class PlayerInfo(
+    val id: Int,
+    val name: String,
+    val number: Int?,
+    val pos: String?,
+    val grid: String?
+)
+
+data class LineupCoach(
+    val id: Int?,
+    val name: String?,
+    val photo: String?
+)
+
+// ==================== STANDINGS ====================
+
 data class StandingsResponse(
     val get: String,
     val parameters: Map<String, String>,
-    val errors: List<String>,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val results: Int,
     val paging: Paging,
     val response: List<StandingsData>
@@ -140,10 +268,13 @@ data class MatchGoals(
     @SerializedName("against") val goalsAgainst: Int
 )
 
+// ==================== LEAGUES ====================
+
 data class LeaguesResponse(
     val get: String,
     val parameters: Map<String, String>,
-    val errors: List<String>,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val results: Int,
     val paging: Paging,
     val response: List<LeagueData>
@@ -195,10 +326,13 @@ data class Fixtures(
     val statistics_players: Boolean
 )
 
+// ==================== TEAMS ====================
+
 data class TeamResponse(
     val get: String,
     val parameters: Map<String, String>,
-    val errors: List<String>,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val results: Int,
     val paging: Paging,
     val response: List<TeamData>
@@ -229,10 +363,13 @@ data class VenueDetails(
     val image: String?
 )
 
+// ==================== TEAM STATISTICS ====================
+
 data class TeamStatsResponse(
     val get: String,
     val parameters: Map<String, String>,
-    val errors: List<String>,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val results: Int,
     val paging: Paging,
     val response: TeamStatistics?
@@ -244,10 +381,13 @@ data class TeamStatistics(
     val form: String
 )
 
+// ==================== PREDICTIONS ====================
+
 data class PredictionsResponse(
     val get: String,
     val parameters: Map<String, String>,
-    val errors: List<String>,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val results: Int,
     val paging: Paging,
     val response: List<PredictionData>
@@ -307,9 +447,10 @@ data class ComparisonStats(
 data class BasketballResponse(
     val get: String?,
     val parameters: Map<String, String>?,
-    val errors: List<String>?,
+    @JsonAdapter(ErrorsDeserializer::class)
+    val errors: List<String>? = emptyList(),
     val results: Int?,
-    val response: List<BasketballGame>?
+    val response: List<BasketballGame>? = emptyList()
 )
 
 data class BasketballGame(
@@ -374,6 +515,8 @@ data class BasketballScore(
 )
 
 data class BasketballStandingsResponse(
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val response: List<BasketballStanding>?
 )
 
@@ -399,9 +542,10 @@ data class BasketballWinLoss(
 data class HockeyResponse(
     val get: String?,
     val parameters: Map<String, String>?,
-    val errors: List<String>?,
+    @JsonAdapter(ErrorsDeserializer::class)
+    val errors: List<String>? = emptyList(),
     val results: Int?,
-    val response: List<HockeyGame>?
+    val response: List<HockeyGame>? = emptyList()
 )
 
 data class HockeyGame(
@@ -457,6 +601,8 @@ data class HockeyScores(
 )
 
 data class HockeyStandingsResponse(
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val response: List<HockeyStanding>?
 )
 
@@ -482,9 +628,10 @@ data class HockeyWinLoss(
 data class Formula1Response(
     val get: String?,
     val parameters: Map<String, String>?,
-    val errors: List<String>?,
+    @JsonAdapter(ErrorsDeserializer::class)
+    val errors: List<String>? = emptyList(),
     val results: Int?,
-    val response: List<F1Race>?
+    val response: List<F1Race>? = emptyList()
 )
 
 data class F1Race(
@@ -535,6 +682,8 @@ data class F1Driver(
 )
 
 data class F1DriversResponse(
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val response: List<F1DriverStanding>?
 )
 
@@ -558,9 +707,10 @@ data class F1Team(
 data class VolleyballResponse(
     val get: String?,
     val parameters: Map<String, String>?,
-    val errors: List<String>?,
+    @JsonAdapter(ErrorsDeserializer::class)
+    val errors: List<String>? = emptyList(),
     val results: Int?,
-    val response: List<VolleyballGame>?
+    val response: List<VolleyballGame>? = emptyList()
 )
 
 data class VolleyballGame(
@@ -625,6 +775,8 @@ data class VolleyballScore(
 )
 
 data class VolleyballStandingsResponse(
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val response: List<VolleyballStanding>?
 )
 
@@ -650,9 +802,10 @@ data class VolleyballWinLoss(
 data class RugbyResponse(
     val get: String?,
     val parameters: Map<String, String>?,
-    val errors: List<String>?,
+    @JsonAdapter(ErrorsDeserializer::class)
+    val errors: List<String>? = emptyList(),
     val results: Int?,
-    val response: List<RugbyGame>?
+    val response: List<RugbyGame>? = emptyList()
 )
 
 data class RugbyGame(
@@ -708,6 +861,8 @@ data class RugbyScores(
 )
 
 data class RugbyStandingsResponse(
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
     val response: List<RugbyStanding>?
 )
 
@@ -724,6 +879,157 @@ data class RugbyGames(
 )
 
 data class RugbyWinLoss(
+    val total: Int?,
+    val percentage: String?
+)
+
+// ==================== TEAM STATISTICS (FOOTBALL) ====================
+
+data class TeamStatisticsResponse(
+    val get: String?,
+    val parameters: Map<String, Any>?,
+    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
+    val errors: List<String>? = emptyList(),
+    val results: Int?,
+    val response: TeamStatisticsData?
+)
+
+data class TeamStatisticsData(
+    val league: TeamLeagueInfo,
+    val team: TeamInfo,
+    val form: String?,
+    val fixtures: TeamFixturesStats,
+    val goals: TeamGoalsStats,
+    val biggest: TeamBiggestStats,
+    val clean_sheet: TeamCleanSheetStats,
+    val failed_to_score: TeamFailedToScoreStats,
+    val penalty: TeamPenaltyStats,
+    val lineups: List<TeamLineupStats>?,
+    val cards: TeamCardsStats?
+)
+
+data class TeamLeagueInfo(
+    val id: Int,
+    val name: String,
+    val country: String,
+    val logo: String,
+    val flag: String?,
+    val season: Int
+)
+
+data class TeamInfo(
+    val id: Int,
+    val name: String,
+    val logo: String
+)
+
+data class TeamFixturesStats(
+    val played: TeamPlayedStats,
+    val wins: TeamPlayedStats,
+    val draws: TeamPlayedStats,
+    val loses: TeamPlayedStats
+)
+
+data class TeamPlayedStats(
+    val home: Int?,
+    val away: Int?,
+    val total: Int?
+)
+
+data class TeamGoalsStats(
+    val `for`: TeamGoalsForAgainst,
+    val against: TeamGoalsForAgainst
+)
+
+data class TeamGoalsForAgainst(
+    val total: TeamGoalsTotal,
+    val average: TeamGoalsAverage,
+    val minute: Map<String, TeamGoalsMinute>?
+)
+
+data class TeamGoalsTotal(
+    val home: Int?,
+    val away: Int?,
+    val total: Int?
+)
+
+data class TeamGoalsAverage(
+    val home: String?,
+    val away: String?,
+    val total: String?
+)
+
+data class TeamGoalsMinute(
+    val total: Int?,
+    val percentage: String?
+)
+
+data class TeamBiggestStats(
+    val streak: TeamStreakStats,
+    val wins: TeamWinsLosesStats,
+    val loses: TeamWinsLosesStats,
+    val goals: TeamBiggestGoalsStats
+)
+
+data class TeamStreakStats(
+    val wins: Int?,
+    val draws: Int?,
+    val loses: Int?
+)
+
+data class TeamWinsLosesStats(
+    val home: String?,
+    val away: String?
+)
+
+data class TeamBiggestGoalsStats(
+    val `for`: TeamBiggestGoalsForAgainst,
+    val against: TeamBiggestGoalsForAgainst
+)
+
+data class TeamBiggestGoalsForAgainst(
+    val home: Int?,
+    val away: Int?
+)
+
+data class TeamCleanSheetStats(
+    val home: Int?,
+    val away: Int?,
+    val total: Int?
+)
+
+data class TeamFailedToScoreStats(
+    val home: Int?,
+    val away: Int?,
+    val total: Int?
+)
+
+data class TeamPenaltyStats(
+    val scored: TeamPenaltyScored?,
+    val missed: TeamPenaltyMissed?
+)
+
+data class TeamPenaltyScored(
+    val total: Int?,
+    val percentage: String?
+)
+
+data class TeamPenaltyMissed(
+    val total: Int?,
+    val percentage: String?
+)
+
+data class TeamLineupStats(
+    val formation: String,
+    val played: Int
+)
+
+data class TeamCardsStats(
+    val yellow: Map<String, TeamCardMinute>?,
+    val red: Map<String, TeamCardMinute>?
+)
+
+data class TeamCardMinute(
     val total: Int?,
     val percentage: String?
 )

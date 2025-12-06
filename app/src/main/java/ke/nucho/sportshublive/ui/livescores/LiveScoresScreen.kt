@@ -27,7 +27,8 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveScoresScreen(
-    viewModel: LiveScoresViewModel = viewModel()
+    viewModel: LiveScoresViewModel = viewModel(),
+    onMatchClick: (fixtureId: Int, sport: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
@@ -114,7 +115,11 @@ fun LiveScoresScreen(
                     LoadingContent()
                 }
                 is LiveScoresUiState.Success -> {
-                    MatchesList(fixtures = state.fixtures)
+                    MatchesList(
+                        fixtures = state.fixtures,
+                        selectedSport = selectedSport,
+                        onMatchClick = onMatchClick
+                    )
                 }
                 is LiveScoresUiState.Error -> {
                     ErrorContent(
@@ -313,22 +318,36 @@ fun DateChip(
 }
 
 @Composable
-fun MatchesList(fixtures: List<Fixture>) {
+fun MatchesList(
+    fixtures: List<Fixture>,
+    selectedSport: String,
+    onMatchClick: (fixtureId: Int, sport: String) -> Unit
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(fixtures) { fixture ->
-            MatchCard(fixture = fixture)
+            MatchCard(
+                fixture = fixture,
+                onClick = {
+                    onMatchClick(fixture.fixture.id, selectedSport)
+                }
+            )
         }
     }
 }
 
 @Composable
-fun MatchCard(fixture: Fixture) {
+fun MatchCard(
+    fixture: Fixture,
+    onClick: () -> Unit = {}
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(

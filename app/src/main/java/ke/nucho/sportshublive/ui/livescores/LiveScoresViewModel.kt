@@ -13,13 +13,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import ke.nucho.sportshublive.utils.SportDataConverters
 
 /**
- * ViewModel with Firestore caching support
+ * ViewModel with Enhanced Error Handling
+ * - Handles API account suspension gracefully
+ * - Shows user-friendly error messages
+ * - Provides actionable guidance
  */
 class LiveScoresViewModel : ViewModel() {
 
-    // USE CACHED REPOSITORY INSTEAD OF DIRECT API
     private val repository = CachedSportsRepository()
 
     // UI State
@@ -80,7 +83,7 @@ class LiveScoresViewModel : ViewModel() {
     }
 
     /**
-     * Load live matches with caching
+     * ✅ UPDATED: Load live matches with enhanced error handling
      */
     fun loadLiveMatches(forceRefresh: Boolean = false) {
         viewModelScope.launch {
@@ -157,19 +160,89 @@ class LiveScoresViewModel : ViewModel() {
                     trace.putAttribute("from_cache", (!forceRefresh).toString())
                 }.onFailure { e ->
                     Log.e(TAG, "❌ Failed! Error: ${e.message}")
-                    FirebaseAnalyticsHelper.logApiCallFailure("live_matches", _selectedSport.value, e.message ?: "Unknown")
-                    _uiState.value = LiveScoresUiState.Error("Error: ${e.message}")
+
+                    // ✅ NEW: Handle specific exception types with user-friendly messages
+                    val errorMessage = when (e) {
+                        is CachedSportsRepository.ApiAccountSuspendedException -> {
+                            "⚠️ API Account Suspended\n\n" +
+                                    "Your API subscription is suspended.\n\n" +
+                                    "Please visit:\nhttps://dashboard.api-football.com\n\n" +
+                                    "to resolve this issue and reactivate your account."
+                        }
+                        is CachedSportsRepository.ApiPlanLimitationException -> {
+                            "⚠️ Plan Limitation\n\n" +
+                                    "${e.message}\n\n" +
+                                    "Options:\n" +
+                                    "• Upgrade your API plan\n" +
+                                    "• Try a different sport\n" +
+                                    "• Select an earlier date"
+                        }
+                        is CachedSportsRepository.ApiInvalidParameterException -> {
+                            "⚠️ Invalid Request\n\n" +
+                                    "${e.message}\n\n" +
+                                    "Please try:\n" +
+                                    "• Selecting a different option\n" +
+                                    "• Refreshing the app\n" +
+                                    "• Checking your internet connection"
+                        }
+                        is CachedSportsRepository.ApiErrorException -> {
+                            "⚠️ API Error\n\n" +
+                                    "${e.message}\n\n" +
+                                    "This is usually temporary.\n" +
+                                    "Please try again in a few moments."
+                        }
+                        else -> {
+                            "Unable to load matches\n\n" +
+                                    "Error: ${e.message}\n\n" +
+                                    "Please check:\n" +
+                                    "• Internet connection\n" +
+                                    "• Try refreshing\n" +
+                                    "• Contact support if issue persists"
+                        }
+                    }
+
+                    FirebaseAnalyticsHelper.logApiCallFailure(
+                        "live_matches",
+                        _selectedSport.value,
+                        e.javaClass.simpleName
+                    )
+
+                    _uiState.value = LiveScoresUiState.Error(errorMessage)
                     trace.putMetric("response_time_ms", responseTime)
                     trace.putAttribute("status", "error")
+                    trace.putAttribute("error_type", e.javaClass.simpleName)
                 }
 
             } catch (e: Exception) {
                 val responseTime = System.currentTimeMillis() - startTime
                 Log.e(TAG, "❌ Exception caught: ${e.message}", e)
-                FirebaseAnalyticsHelper.logApiCallFailure("live_matches", _selectedSport.value, e.message ?: "Unknown")
-                _uiState.value = LiveScoresUiState.Error("Network error: ${e.message}")
+
+                // ✅ NEW: Handle caught exceptions with user-friendly messages
+                val errorMessage = when (e) {
+                    is CachedSportsRepository.ApiAccountSuspendedException,
+                    is CachedSportsRepository.ApiPlanLimitationException,
+                    is CachedSportsRepository.ApiInvalidParameterException,
+                    is CachedSportsRepository.ApiErrorException -> {
+                        e.message ?: "API Error"
+                    }
+                    else -> {
+                        "Network Error\n\n" +
+                                "${e.message}\n\n" +
+                                "Please check your internet connection\n" +
+                                "and try again."
+                    }
+                }
+
+                FirebaseAnalyticsHelper.logApiCallFailure(
+                    "live_matches",
+                    _selectedSport.value,
+                    e.javaClass.simpleName
+                )
+
+                _uiState.value = LiveScoresUiState.Error(errorMessage)
                 trace.putMetric("response_time_ms", responseTime)
-                trace.putAttribute("status", "error")
+                trace.putAttribute("status", "exception")
+                trace.putAttribute("exception_type", e.javaClass.simpleName)
             } finally {
                 trace.stop()
             }
@@ -206,21 +279,34 @@ class LiveScoresViewModel : ViewModel() {
                     }
                     else -> {
                         Log.w(TAG, "Date fixtures not implemented for ${_selectedSport.value}")
-                        Result.failure(Exception("Not implemented for this sport"))
+                        Result.failure(Exception("Not available for this sport yet"))
                     }
                 }
 
                 result.onSuccess {
                     trace.putAttribute("status", "success")
                 }.onFailure { e ->
-                    _uiState.value = LiveScoresUiState.Error("Error: ${e.message}")
+                    // ✅ Use same error handling as loadLiveMatches
+                    val errorMessage = when (e) {
+                        is CachedSportsRepository.ApiAccountSuspendedException,
+                        is CachedSportsRepository.ApiPlanLimitationException,
+                        is CachedSportsRepository.ApiInvalidParameterException,
+                        is CachedSportsRepository.ApiErrorException -> {
+                            e.message ?: "API Error"
+                        }
+                        else -> {
+                            "Error loading fixtures: ${e.message}"
+                        }
+                    }
+                    _uiState.value = LiveScoresUiState.Error(errorMessage)
                     trace.putAttribute("status", "error")
+                    trace.putAttribute("error_type", e.javaClass.simpleName)
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading fixtures by date", e)
                 _uiState.value = LiveScoresUiState.Error("Network error: ${e.message}")
-                trace.putAttribute("status", "error")
+                trace.putAttribute("status", "exception")
             } finally {
                 trace.stop()
             }
@@ -243,7 +329,19 @@ class LiveScoresViewModel : ViewModel() {
                 result.onSuccess { fixtures ->
                     handleFootballFixtures(fixtures)
                 }.onFailure { e ->
-                    _uiState.value = LiveScoresUiState.Error("Error: ${e.message}")
+                    // ✅ Use consistent error handling
+                    val errorMessage = when (e) {
+                        is CachedSportsRepository.ApiAccountSuspendedException,
+                        is CachedSportsRepository.ApiPlanLimitationException,
+                        is CachedSportsRepository.ApiInvalidParameterException,
+                        is CachedSportsRepository.ApiErrorException -> {
+                            e.message ?: "API Error"
+                        }
+                        else -> {
+                            "Error loading league fixtures: ${e.message}"
+                        }
+                    }
+                    _uiState.value = LiveScoresUiState.Error(errorMessage)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading fixtures by league", e)
@@ -263,7 +361,7 @@ class LiveScoresViewModel : ViewModel() {
             } ?: fixtures
 
             _uiState.value = if (filteredFixtures.isEmpty()) {
-                LiveScoresUiState.Empty("No matches found")
+                LiveScoresUiState.Empty("No matches found for this league")
             } else {
                 LiveScoresUiState.Success(filteredFixtures)
             }
@@ -272,11 +370,11 @@ class LiveScoresViewModel : ViewModel() {
 
     private fun handleBasketballGames(games: List<BasketballGame>) {
         if (games.isEmpty()) {
-            _uiState.value = LiveScoresUiState.Empty("No games found")
+            _uiState.value = LiveScoresUiState.Empty("No basketball games found")
         } else {
             val fixtures = games.mapNotNull { convertBasketballToFixture(it) }
             _uiState.value = if (fixtures.isEmpty()) {
-                LiveScoresUiState.Empty("No games found")
+                LiveScoresUiState.Empty("No games available")
             } else {
                 LiveScoresUiState.Success(fixtures)
             }
@@ -285,11 +383,11 @@ class LiveScoresViewModel : ViewModel() {
 
     private fun handleHockeyGames(games: List<HockeyGame>) {
         if (games.isEmpty()) {
-            _uiState.value = LiveScoresUiState.Empty("No games found")
+            _uiState.value = LiveScoresUiState.Empty("No hockey games found")
         } else {
             val fixtures = games.mapNotNull { convertHockeyToFixture(it) }
             _uiState.value = if (fixtures.isEmpty()) {
-                LiveScoresUiState.Empty("No games found")
+                LiveScoresUiState.Empty("No games available")
             } else {
                 LiveScoresUiState.Success(fixtures)
             }
@@ -298,11 +396,11 @@ class LiveScoresViewModel : ViewModel() {
 
     private fun handleF1Races(races: List<F1Race>) {
         if (races.isEmpty()) {
-            _uiState.value = LiveScoresUiState.Empty("No races found")
+            _uiState.value = LiveScoresUiState.Empty("No F1 races found")
         } else {
             val fixtures = races.mapNotNull { convertF1ToFixture(it) }
             _uiState.value = if (fixtures.isEmpty()) {
-                LiveScoresUiState.Empty("No races found")
+                LiveScoresUiState.Empty("No races available")
             } else {
                 LiveScoresUiState.Success(fixtures)
             }
@@ -311,11 +409,11 @@ class LiveScoresViewModel : ViewModel() {
 
     private fun handleVolleyballGames(games: List<VolleyballGame>) {
         if (games.isEmpty()) {
-            _uiState.value = LiveScoresUiState.Empty("No games found")
+            _uiState.value = LiveScoresUiState.Empty("No volleyball games found")
         } else {
             val fixtures = games.mapNotNull { convertVolleyballToFixture(it) }
             _uiState.value = if (fixtures.isEmpty()) {
-                LiveScoresUiState.Empty("No games found")
+                LiveScoresUiState.Empty("No games available")
             } else {
                 LiveScoresUiState.Success(fixtures)
             }
@@ -324,42 +422,37 @@ class LiveScoresViewModel : ViewModel() {
 
     private fun handleRugbyGames(games: List<RugbyGame>) {
         if (games.isEmpty()) {
-            _uiState.value = LiveScoresUiState.Empty("No games found")
+            _uiState.value = LiveScoresUiState.Empty("No rugby games found")
         } else {
             val fixtures = games.mapNotNull { convertRugbyToFixture(it) }
             _uiState.value = if (fixtures.isEmpty()) {
-                LiveScoresUiState.Empty("No games found")
+                LiveScoresUiState.Empty("No games available")
             } else {
                 LiveScoresUiState.Success(fixtures)
             }
         }
     }
 
-    // ==================== CONVERTERS - Keep your existing implementation ====================
+    // ==================== CONVERTERS ====================
 
-    private fun convertBasketballToFixture(game: BasketballGame): Fixture? {
-        // TODO: Use your existing converter implementation
-        return null
+    private fun convertBasketballToFixture(game: BasketballGame): Fixture {
+        return SportDataConverters.convertBasketballToFixture(game)
     }
 
-    private fun convertHockeyToFixture(game: HockeyGame): Fixture? {
-        // TODO: Use your existing converter implementation
-        return null
+    private fun convertHockeyToFixture(game: HockeyGame): Fixture {
+        return SportDataConverters.convertHockeyToFixture(game)
     }
 
-    private fun convertF1ToFixture(race: F1Race): Fixture? {
-        // TODO: Use your existing converter implementation
-        return null
+    private fun convertF1ToFixture(race: F1Race): Fixture {
+        return SportDataConverters.convertF1ToFixture(race)
     }
 
-    private fun convertVolleyballToFixture(game: VolleyballGame): Fixture? {
-        // TODO: Use your existing converter implementation
-        return null
+    private fun convertVolleyballToFixture(game: VolleyballGame): Fixture {
+        return SportDataConverters.convertVolleyballToFixture(game)
     }
 
-    private fun convertRugbyToFixture(game: RugbyGame): Fixture? {
-        // TODO: Use your existing converter implementation
-        return null
+    private fun convertRugbyToFixture(game: RugbyGame): Fixture {
+        return SportDataConverters.convertRugbyToFixture(game)
     }
 
     // ==================== UTILITY ====================
@@ -367,6 +460,8 @@ class LiveScoresViewModel : ViewModel() {
     fun toggleAutoRefresh() {
         _isAutoRefreshEnabled.value = !_isAutoRefreshEnabled.value
         FirebaseAnalyticsHelper.logAutoRefreshToggled(_isAutoRefreshEnabled.value)
+
+        Log.d(TAG, "Auto-refresh ${if (_isAutoRefreshEnabled.value) "enabled" else "disabled"}")
     }
 
     fun refresh() {
@@ -379,6 +474,7 @@ class LiveScoresViewModel : ViewModel() {
         viewModelScope.launch {
             Log.d(TAG, "🗑️ Clearing all cache")
             repository.clearAllCache()
+            Log.d(TAG, "✓ Cache cleared successfully")
         }
     }
 
@@ -400,6 +496,8 @@ class LiveScoresViewModel : ViewModel() {
         }
     }
 }
+
+// ==================== UI STATES ====================
 
 sealed class LiveScoresUiState {
     object Loading : LiveScoresUiState()

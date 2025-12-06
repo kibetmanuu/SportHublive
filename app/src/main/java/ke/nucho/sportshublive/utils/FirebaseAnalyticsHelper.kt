@@ -67,6 +67,136 @@ object FirebaseAnalyticsHelper {
         analytics.logEvent("match_refreshed", bundle)
     }
 
+    // ==================== MATCH DETAIL SCREEN ====================
+
+    /**
+     * Log when user views match details
+     */
+    fun logMatchDetailViewed(
+        sport: String,
+        fixtureId: Int,
+        homeTeam: String,
+        awayTeam: String
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport_name", sport)
+            putInt("fixture_id", fixtureId)
+            putString("home_team", homeTeam)
+            putString("away_team", awayTeam)
+            putLong("timestamp", System.currentTimeMillis())
+        }
+        analytics.logEvent("match_detail_viewed", bundle)
+    }
+
+    /**
+     * Log when user switches tabs in match detail
+     */
+    fun logMatchDetailTabSelected(
+        sport: String,
+        fixtureId: Int,
+        tabName: String
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport_name", sport)
+            putInt("fixture_id", fixtureId)
+            putString("tab_name", tabName)
+        }
+        analytics.logEvent("match_detail_tab_selected", bundle)
+    }
+
+    /**
+     * Log when user refreshes match details
+     */
+    fun logMatchDetailRefreshed(
+        sport: String,
+        fixtureId: Int
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport_name", sport)
+            putInt("fixture_id", fixtureId)
+        }
+        analytics.logEvent("match_detail_refreshed", bundle)
+    }
+
+    /**
+     * Log when user shares match details
+     */
+    fun logMatchShared(
+        sport: String,
+        fixtureId: Int,
+        shareMethod: String
+    ) {
+        val bundle = Bundle().apply {
+            putString(FirebaseAnalytics.Param.CONTENT_TYPE, "match")
+            putString("sport_name", sport)
+            putInt("fixture_id", fixtureId)
+            putString(FirebaseAnalytics.Param.METHOD, shareMethod)
+        }
+        analytics.logEvent(FirebaseAnalytics.Event.SHARE, bundle)
+    }
+
+    /**
+     * Log when user adds match to favorites
+     */
+    fun logMatchFavorited(
+        sport: String,
+        fixtureId: Int,
+        homeTeam: String,
+        awayTeam: String
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport_name", sport)
+            putInt("fixture_id", fixtureId)
+            putString("home_team", homeTeam)
+            putString("away_team", awayTeam)
+        }
+        analytics.logEvent("match_favorited", bundle)
+    }
+
+    /**
+     * Log when user views statistics tab
+     */
+    fun logStatisticsViewed(
+        sport: String,
+        fixtureId: Int
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport_name", sport)
+            putInt("fixture_id", fixtureId)
+        }
+        analytics.logEvent("statistics_viewed", bundle)
+    }
+
+    /**
+     * Log when user views lineups
+     */
+    fun logLineupsViewed(
+        sport: String,
+        fixtureId: Int
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport_name", sport)
+            putInt("fixture_id", fixtureId)
+        }
+        analytics.logEvent("lineups_viewed", bundle)
+    }
+
+    /**
+     * Log when user views H2H data
+     */
+    fun logHeadToHeadViewed(
+        sport: String,
+        team1: String,
+        team2: String
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport_name", sport)
+            putString("team1", team1)
+            putString("team2", team2)
+        }
+        analytics.logEvent("head_to_head_viewed", bundle)
+    }
+
     // ==================== DATE SELECTION ====================
 
     fun logDateSelected(date: String, sport: String) {
@@ -136,13 +266,21 @@ object FirebaseAnalyticsHelper {
         SportsHubApplication.instance.setUserProperty("favorite_sport", sport)
     }
 
+    fun setFavoriteSport(sport: String) {
+        SportsHubApplication.instance.setUserProperty("favorite_sport", sport)
+    }
+
+    fun setFavoriteTeam(teamName: String) {
+        SportsHubApplication.instance.setUserProperty("favorite_team", teamName)
+    }
+
+    fun setUserProperty(propertyName: String, propertyValue: String) {
+        SportsHubApplication.instance.setUserProperty(propertyName, propertyValue)
+    }
+
     // ==================== ENGAGEMENT ====================
 
-    // Note: session_start is automatically tracked by Firebase
-    // No need to log it manually
-
     fun logAppOpened() {
-        // Custom event for when user opens the app
         analytics.logEvent("app_opened", null)
     }
 
@@ -150,7 +288,22 @@ object FirebaseAnalyticsHelper {
         val bundle = Bundle().apply {
             putLong("session_duration_seconds", duration / 1000)
         }
-        analytics.logEvent("user_session_end", bundle)  // Changed to avoid reserved name
+        analytics.logEvent("user_session_end", bundle)
+    }
+
+    /**
+     * Log user screen engagement time
+     * Changed from reserved "user_engagement" to "screen_engagement_time"
+     */
+    fun logUserEngagement(
+        screenName: String,
+        engagementTimeSeconds: Long
+    ) {
+        val bundle = Bundle().apply {
+            putString(FirebaseAnalytics.Param.SCREEN_NAME, screenName)
+            putLong("engagement_time_seconds", engagementTimeSeconds)
+        }
+        analytics.logEvent("screen_engagement_time", bundle)
     }
 
     // ==================== SEARCH & DISCOVERY ====================

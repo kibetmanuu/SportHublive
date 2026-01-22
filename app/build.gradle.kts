@@ -9,31 +9,35 @@ plugins {
 
 android {
     namespace = "ke.nucho.sportshublive"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "ke.nucho.sportshublive"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // API Keys
-        buildConfigField("String", "API_FOOTBALL_KEY", "\"dfa5bc422e979517069be14236ec78e5\"")
+        // Vector drawable support
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
         debug {
-            // Optional: Use a different key for debug builds
+            isMinifyEnabled = false
+            versionNameSuffix = "-debug"
         }
     }
 
@@ -50,64 +54,68 @@ android {
         compose = true
         buildConfig = true
     }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.8"
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
     // ==================== CORE ANDROID ====================
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
 
     // ==================== JETPACK COMPOSE ====================
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
+    implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.activity:activity-compose:1.9.3")
 
     // ==================== NAVIGATION ====================
-    implementation("androidx.navigation:navigation-compose:2.7.6")
+    implementation("androidx.navigation:navigation-compose:2.8.4")
 
     // ==================== LIFECYCLE & VIEWMODEL ====================
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
 
     // ==================== NETWORKING ====================
-    // Retrofit
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
+    // ==================== JSON PARSING ====================
+    implementation("com.google.code.gson:gson:2.11.0")
+    implementation("org.json:json:20240303")
+
     // ==================== COROUTINES ====================
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 
     // ==================== IMAGE LOADING ====================
-    implementation("io.coil-kt:coil-compose:2.5.0")
-
-    // ==================== UI COMPONENTS ====================
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
-
-    // ==================== YOUTUBE PLAYER ====================
-    implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:12.1.0")
-
-    // ==================== BACKGROUND PROCESSING ====================
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     // ==================== FIREBASE ====================
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    val firebaseBom = platform("com.google.firebase:firebase-bom:33.7.0")
+    implementation(firebaseBom)
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.firebase:firebase-perf-ktx")
     implementation("com.google.firebase:firebase-config-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
 
     // ==================== DEBUG DEPENDENCIES ====================
     debugImplementation("androidx.compose.ui:ui-tooling")
@@ -115,24 +123,8 @@ dependencies {
 
     // ==================== TESTING ====================
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    // Compose
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.2")
-
-// Coil for image loading
-    implementation("io.coil-kt:coil-compose:2.5.0")
-
-// Retrofit & Gson
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-
-// Material 3
-    implementation("androidx.compose.material3:material3:1.1.2")
 }
-
-// IMPORTANT: This must be at the bottom of the file
-apply(plugin = "com.google.gms.google-services")

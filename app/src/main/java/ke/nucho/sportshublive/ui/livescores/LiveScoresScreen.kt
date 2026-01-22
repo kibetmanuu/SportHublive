@@ -1,10 +1,13 @@
 package ke.nucho.sportshublive.ui.livescores
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,229 +19,192 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import ke.nucho.sportshublive.data.models.Fixture
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
+
+// Theme Colors - Deep Blue Theme
+private val DarkBackground = Color(0xFF121212)
+private val DarkSurface = Color(0xFF1E1E1E)
+private val BluePrimary = Color(0xFF1565C0)      // Deep Blue
+private val BlueLight = Color(0xFF42A5F5)        // Light Blue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveScoresScreen(
     viewModel: LiveScoresViewModel = viewModel(),
-    onMatchClick: (fixtureId: Int, sport: String) -> Unit = { _, _ -> }
+    onMatchClick: (fixtureId: Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val isAutoRefresh by viewModel.isAutoRefreshEnabled.collectAsStateWithLifecycle()
-    val selectedSport by viewModel.selectedSport.collectAsStateWithLifecycle()
     val selectedLeague by viewModel.selectedLeague.collectAsStateWithLifecycle()
+    val isLiveView by viewModel.isLiveView.collectAsStateWithLifecycle()
+    val apiProvider by viewModel.apiProvider.collectAsStateWithLifecycle()
 
     // Auto-refresh effect
-    LaunchedEffect(isAutoRefresh) {
-        if (isAutoRefresh) {
-            kotlinx.coroutines.delay(30000) // Refresh every 30 seconds
-            viewModel.refresh()
+    LaunchedEffect(isAutoRefresh, isLiveView) {
+        if (isAutoRefresh && isLiveView) {
+            while (true) {
+                delay(30000)
+                viewModel.refresh()
+            }
         }
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "Live Scores",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                actions = {
-                    IconButton(onClick = { viewModel.toggleAutoRefresh() }) {
-                        Icon(
-                            imageVector = if (isAutoRefresh) Icons.Default.Refresh else Icons.Default.Close,
-                            contentDescription = if (isAutoRefresh) "Auto-refresh ON" else "Auto-refresh OFF",
-                            tint = if (isAutoRefresh) MaterialTheme.colorScheme.primary else Color.Gray
-                        )
-                    }
-                    IconButton(onClick = { viewModel.refresh() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            ModernTopBar(
+                selectedLeague = selectedLeague,
+                apiProvider = apiProvider,
+                isLiveView = isLiveView,
+                isAutoRefresh = isAutoRefresh,
+                onAutoRefreshToggle = { viewModel.toggleAutoRefresh() },
+                onRefresh = { viewModel.refresh() }
             )
-        }
+        },
+        containerColor = DarkBackground
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Sports Selector
-            SportsFilterRow(
-                selectedSport = selectedSport,
-                onSportSelected = { sport ->
-                    viewModel.selectSport(sport)
-                }
+            // League Filter
+            ModernLeagueFilter(
+                selectedLeague = selectedLeague,
+                onLeagueSelected = { viewModel.selectLeague(it) }
             )
 
-            // Competition/League Selector (only for Football)
-            if (selectedSport == "Football") {
-                LeagueFilterRow(
-                    selectedLeague = selectedLeague,
-                    onLeagueSelected = { leagueId ->
-                        viewModel.selectLeague(leagueId)
-                    }
-                )
-            }
-
             // Date Selector
-            DateSelectorRow(
+            ModernDateSelector(
                 selectedDate = selectedDate,
-                onDateSelected = { date ->
-                    viewModel.loadFixturesByDate(date)
-                },
-                onLiveClick = {
-                    viewModel.loadLiveMatches()
-                }
+                isLiveView = isLiveView,
+                onDateSelected = { viewModel.loadFixturesByDate(it) },
+                onLiveClick = { viewModel.loadLiveMatches() }
             )
 
             // Content
             when (val state = uiState) {
-                is LiveScoresUiState.Loading -> {
-                    LoadingContent()
-                }
+                is LiveScoresUiState.Loading -> ModernLoadingContent()
                 is LiveScoresUiState.Success -> {
-                    MatchesList(
+                    ModernMatchesList(
                         fixtures = state.fixtures,
-                        selectedSport = selectedSport,
+                        isLiveView = isLiveView,
                         onMatchClick = onMatchClick
                     )
                 }
                 is LiveScoresUiState.Error -> {
-                    ErrorContent(
+                    ModernErrorContent(
                         message = state.message,
                         onRetry = { viewModel.refresh() }
                     )
                 }
-                is LiveScoresUiState.Empty -> {
-                    EmptyContent(message = state.message)
-                }
+                is LiveScoresUiState.Empty -> ModernEmptyContent(message = state.message)
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DateSelectorRow(
-    selectedDate: String,
-    onDateSelected: (String) -> Unit,
-    onLiveClick: () -> Unit
+fun ModernTopBar(
+    selectedLeague: Int?,
+    apiProvider: String,
+    isLiveView: Boolean,
+    isAutoRefresh: Boolean,
+    onAutoRefreshToggle: () -> Unit,
+    onRefresh: () -> Unit
 ) {
-    val dates = remember {
-        (-2..2).map { offset ->
-            val calendar = Calendar.getInstance()
-            calendar.add(Calendar.DAY_OF_YEAR, offset)
-            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-            val displaySdf = SimpleDateFormat("EEE, dd MMM", Locale.getDefault())
-            sdf.format(calendar.time) to displaySdf.format(calendar.time)
-        }
-    }
-
-    val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-
-    androidx.compose.foundation.lazy.LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp)
-    ) {
-        // Live button
-        item {
-            DateChip(
-                label = "LIVE",
-                isSelected = selectedDate == today,
-                onClick = onLiveClick
-            )
-        }
-
-        // Date chips
-        items(dates) { (date, displayDate) ->
-            DateChip(
-                label = displayDate,
-                isSelected = date == selectedDate,
-                onClick = { onDateSelected(date) }
-            )
-        }
-    }
-}
-
-@Composable
-fun SportsFilterRow(
-    selectedSport: String,
-    onSportSelected: (String) -> Unit
-) {
-    val sports = listOf(
-        "⚽ Football",
-        "🏀 Basketball",
-        "🏒 Hockey",
-        "🏎️ Formula 1",
-        "🏐 Volleyball",
-        "🏉 Rugby"
+    TopAppBar(
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "⚽ Football Matches",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    if (selectedLeague != null) {
+                        val leagueInfo = LiveScoresViewModel.FOOTBALL_LEAGUES[selectedLeague]
+                        Text(
+                            text = "${leagueInfo?.flag} ${leagueInfo?.name}",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    } else if (apiProvider.isNotEmpty()) {
+                        Text(
+                            text = apiProvider,
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
+        },
+        actions = {
+            // Only show auto-refresh toggle when in live view
+            if (isLiveView) {
+                IconButton(onClick = onAutoRefreshToggle) {
+                    Icon(
+                        imageVector = if (isAutoRefresh) Icons.Default.Autorenew else Icons.Default.Close,
+                        contentDescription = if (isAutoRefresh) "Disable auto-refresh" else "Enable auto-refresh",
+                        tint = if (isAutoRefresh) BlueLight else Color.Gray
+                    )
+                }
+            }
+            // Single refresh button
+            IconButton(onClick = onRefresh) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh",
+                    tint = Color.White
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = BluePrimary
+        )
     )
-
-    androidx.compose.foundation.lazy.LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        items(sports) { sport ->
-            val sportName = sport.substringAfter(" ")
-            SportChip(
-                label = sport,
-                isSelected = selectedSport == sportName,
-                onClick = { onSportSelected(sportName) }
-            )
-        }
-    }
 }
 
 @Composable
-fun LeagueFilterRow(
+fun ModernLeagueFilter(
     selectedLeague: Int?,
     onLeagueSelected: (Int?) -> Unit
 ) {
-    // Popular football leagues
     val leagues = listOf(
         null to "🌍 All",
-        39 to "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League",
-        140 to "🇪🇸 La Liga",
+        39 to "🏴󠁧󠁢󠁥󠁮󠁧󠁿 EPL",
+        140 to "🇪🇸 LaLiga",
         78 to "🇩🇪 Bundesliga",
-        135 to "🇮🇹 Serie A",
-        61 to "🇫🇷 Ligue 1",
-        2 to "⚽ Champions League",
-        3 to "🏆 Europa League"
+        135 to "🇮🇹 SerieA",
+        61 to "🇫🇷 Ligue1",
+        2 to "⚽ UCL",
+        3 to "🏆 UEL"
     )
 
-    androidx.compose.foundation.lazy.LazyRow(
+    LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .background(DarkSurface)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(horizontal = 16.dp)
     ) {
         items(leagues) { (leagueId, leagueName) ->
-            LeagueChip(
+            ModernLeagueChip(
                 label = leagueName,
                 isSelected = selectedLeague == leagueId,
                 onClick = { onLeagueSelected(leagueId) }
@@ -248,7 +214,7 @@ fun LeagueFilterRow(
 }
 
 @Composable
-fun SportChip(
+fun ModernLeagueChip(
     label: String,
     isSelected: Boolean,
     onClick: () -> Unit
@@ -257,167 +223,157 @@ fun SportChip(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick),
-        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(
-            width = 1.dp,
-            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-        )
+        color = if (isSelected) BluePrimary else Color(0xFF2C2C2C),
+        tonalElevation = if (isSelected) 4.dp else 0.dp
     ) {
         Text(
             text = label,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-            style = MaterialTheme.typography.bodyMedium
-        )
-    }
-}
-
-@Composable
-fun LeagueChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
-        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color.White,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.labelLarge
+            fontSize = 13.sp
         )
     }
 }
 
 @Composable
-fun DateChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
+fun ModernDateSelector(
+    selectedDate: String,
+    isLiveView: Boolean,
+    onDateSelected: (String) -> Unit,
+    onLiveClick: () -> Unit
 ) {
-    Surface(
+    val datesList = remember {
+        buildList {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val shortSdf = SimpleDateFormat("EEE dd", Locale.getDefault())
+            val today = sdf.format(Date())
+
+            for (offset in -3..3) {
+                val cal = Calendar.getInstance()
+                cal.add(Calendar.DAY_OF_YEAR, offset)
+                val date = sdf.format(cal.time)
+                val label = if (date == today) "Today" else shortSdf.format(cal.time)
+                add(Triple(date, label, offset))
+            }
+        }
+    }
+
+    LazyRow(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
-        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+            .fillMaxWidth()
+            .background(DarkBackground)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp)
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.labelLarge
-        )
-    }
-}
+        item {
+            ModernDateChip(
+                label = "🔴 LIVE",
+                isSelected = isLiveView,
+                onClick = onLiveClick,
+                isLive = true
+            )
+        }
 
-@Composable
-fun MatchesList(
-    fixtures: List<Fixture>,
-    selectedSport: String,
-    onMatchClick: (fixtureId: Int, sport: String) -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(fixtures) { fixture ->
-            MatchCard(
-                fixture = fixture,
-                onClick = {
-                    onMatchClick(fixture.fixture.id, selectedSport)
-                }
+        items(datesList) { (date, label, offset) ->
+            ModernDateChip(
+                label = label,
+                isSelected = !isLiveView && date == selectedDate,
+                onClick = { onDateSelected(date) },
+                isToday = offset == 0
             )
         }
     }
 }
 
 @Composable
-fun MatchCard(
-    fixture: Fixture,
-    onClick: () -> Unit = {}
+fun ModernDateChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    isLive: Boolean = false,
+    isToday: Boolean = false
 ) {
-    Card(
+    var pulse by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isSelected && isLive) {
+        if (isSelected && isLive) {
+            while (true) {
+                pulse = !pulse
+                delay(1000)
+            }
+        }
+    }
+
+    val backgroundColor = when {
+        isSelected && isLive -> Color(0xFFD32F2F)
+        isSelected -> BluePrimary
+        isToday -> Color(0xFF37474F)
+        else -> Color(0xFF2C2C2C)
+    }
+
+    Surface(
         modifier = Modifier
-            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        color = backgroundColor
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // League info
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(
-                        model = fixture.league.logo,
-                        contentDescription = fixture.league.name,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = fixture.league.name,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Match status
-                MatchStatusBadge(fixture = fixture)
+            if (isLive && isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(if (pulse) Color.White else Color.White.copy(0.5f))
+                )
             }
+            Text(
+                text = label,
+                color = Color.White,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
+@Composable
+fun ModernMatchesList(
+    fixtures: List<Fixture>,
+    isLiveView: Boolean,
+    onMatchClick: (Int) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkBackground),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        val groupedFixtures = fixtures.groupBy { it.league.name }
 
-            // Teams and score
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Home team
-                TeamSection(
-                    teamName = fixture.teams.home.name,
-                    teamLogo = fixture.teams.home.logo,
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Score
-                ScoreSection(
-                    homeScore = fixture.goals.home,
-                    awayScore = fixture.goals.away,
-                    status = fixture.fixture.status.short
-                )
-
-                // Away team
-                TeamSection(
-                    teamName = fixture.teams.away.name,
-                    teamLogo = fixture.teams.away.logo,
-                    modifier = Modifier.weight(1f),
-                    alignEnd = true
+        groupedFixtures.forEach { (leagueName, leagueFixtures) ->
+            item {
+                ModernLeagueHeader(
+                    leagueName = leagueName,
+                    leagueLogo = leagueFixtures.first().league.logo,
+                    matchCount = leagueFixtures.size
                 )
             }
 
-            // Match time/date
-            if (fixture.fixture.status.short == "NS") {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = formatMatchTime(fixture.fixture.date),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+            items(
+                items = leagueFixtures,
+                key = { it.fixture.id }
+            ) { fixture ->
+                ModernMatchCard(
+                    fixture = fixture,
+                    isLive = isLiveView,
+                    onClick = { onMatchClick(fixture.fixture.id) }
                 )
             }
         }
@@ -425,9 +381,152 @@ fun MatchCard(
 }
 
 @Composable
-fun TeamSection(
+fun ModernLeagueHeader(
+    leagueName: String,
+    leagueLogo: String,
+    matchCount: Int
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = leagueLogo,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = leagueName,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = "$matchCount",
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.5f)
+        )
+    }
+}
+
+@Composable
+fun ModernMatchCard(
+    fixture: Fixture,
+    isLive: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = DarkSurface
+        ),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ModernMatchTime(fixture)
+                ModernStatusBadge(fixture)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ModernTeamColumn(
+                    teamName = fixture.teams.home.name,
+                    teamLogo = fixture.teams.home.logo,
+                    score = fixture.goals.home,
+                    isWinner = (fixture.goals.home ?: 0) > (fixture.goals.away ?: 0),
+                    modifier = Modifier.weight(1f)
+                )
+
+                ModernScore(
+                    homeScore = fixture.goals.home,
+                    awayScore = fixture.goals.away,
+                    status = fixture.fixture.status.short
+                )
+
+                ModernTeamColumn(
+                    teamName = fixture.teams.away.name,
+                    teamLogo = fixture.teams.away.logo,
+                    score = fixture.goals.away,
+                    isWinner = (fixture.goals.away ?: 0) > (fixture.goals.home ?: 0),
+                    modifier = Modifier.weight(1f),
+                    alignEnd = true
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ModernMatchTime(fixture: Fixture) {
+    val time = try {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
+        val date = sdf.parse(fixture.fixture.date)
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(date ?: Date())
+    } catch (e: Exception) {
+        "00:00"
+    }
+
+    Text(
+        text = time,
+        fontSize = 12.sp,
+        color = Color.White.copy(alpha = 0.6f),
+        fontWeight = FontWeight.Medium
+    )
+}
+
+@Composable
+fun ModernStatusBadge(fixture: Fixture) {
+    val (text, color) = when (fixture.fixture.status.short) {
+        "NS" -> "Scheduled" to Color(0xFF757575)
+        "1H", "2H", "ET", "P", "LIVE" -> "${fixture.fixture.status.elapsed}'" to BlueLight
+        "HT" -> "HT" to Color(0xFFFF9800)
+        "FT" -> "FT" to Color(0xFF9E9E9E)
+        "PST" -> "Postponed" to Color(0xFFE53935)
+        "CANC" -> "Cancelled" to Color(0xFFE53935)
+        else -> fixture.fixture.status.short to Color.Gray
+    }
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(alpha = 0.2f)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            fontSize = 11.sp,
+            color = color,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+fun ModernTeamColumn(
     teamName: String,
     teamLogo: String,
+    score: Int?,
+    isWinner: Boolean,
     modifier: Modifier = Modifier,
     alignEnd: Boolean = false
 ) {
@@ -437,196 +536,156 @@ fun TeamSection(
     ) {
         AsyncImage(
             model = teamLogo,
-            contentDescription = teamName,
+            contentDescription = null,
             modifier = Modifier.size(48.dp)
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Text(
             text = teamName,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = if (alignEnd) TextAlign.End else TextAlign.Start
+            fontSize = 14.sp,
+            fontWeight = if (isWinner && score != null) FontWeight.Bold else FontWeight.Normal,
+            color = if (isWinner && score != null) BlueLight else Color.White,
+            textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
 
 @Composable
-fun ScoreSection(
+fun ModernScore(
     homeScore: Int?,
     awayScore: Int?,
     status: String
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 16.dp)
-    ) {
-        if (status != "NS" && homeScore != null && awayScore != null) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = homeScore.toString(),
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (homeScore > awayScore) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = " - ",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-                Text(
-                    text = awayScore.toString(),
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (awayScore > homeScore) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                )
-            }
-        } else {
+    if (status != "NS" && homeScore != null && awayScore != null) {
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "VS",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Bold
+                text = homeScore.toString(),
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (homeScore > awayScore) BlueLight else Color.White
+            )
+            Text(
+                text = " : ",
+                fontSize = 20.sp,
+                color = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.padding(horizontal = 6.dp)
+            )
+            Text(
+                text = awayScore.toString(),
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (awayScore > homeScore) BlueLight else Color.White
             )
         }
-    }
-}
-
-@Composable
-fun MatchStatusBadge(fixture: Fixture) {
-    val (text, color) = when (fixture.fixture.status.short) {
-        "NS" -> "Scheduled" to Color.Gray
-        "1H", "2H", "ET", "P" -> "${fixture.fixture.status.elapsed}'" to Color(0xFF4CAF50)
-        "HT" -> "Half Time" to Color(0xFFFF9800)
-        "FT" -> "Full Time" to Color.Gray
-        "AET" -> "Extra Time Ended" to Color.Gray
-        "PEN" -> "Penalties" to Color(0xFFFF9800)
-        "PST" -> "Postponed" to Color(0xFFF44336)
-        "CANC" -> "Cancelled" to Color(0xFFF44336)
-        "ABD" -> "Abandoned" to Color(0xFFF44336)
-        else -> fixture.fixture.status.long to Color.Gray
-    }
-
-    Surface(
-        color = color.copy(alpha = 0.2f),
-        shape = RoundedCornerShape(8.dp)
-    ) {
+    } else {
         Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            fontWeight = FontWeight.Bold
+            text = "VS",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White.copy(alpha = 0.4f)
         )
     }
 }
 
 @Composable
-fun LoadingContent() {
+fun ModernLoadingContent() {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkBackground),
         contentAlignment = Alignment.Center
     ) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            CircularProgressIndicator()
-            Spacer(modifier = Modifier.height(16.dp))
+            CircularProgressIndicator(
+                color = BlueLight,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(20.dp))
             Text(
                 text = "Loading matches...",
-                style = MaterialTheme.typography.bodyMedium
+                fontSize = 15.sp,
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
     }
 }
 
 @Composable
-fun ErrorContent(
+fun ModernErrorContent(
     message: String,
     onRetry: () -> Unit
 ) {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkBackground),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(32.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Warning,
-                contentDescription = "Error",
+                contentDescription = null,
                 modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.error
+                tint = Color(0xFFE53935)
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Oops! Something went wrong",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             Text(
                 text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
             )
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(onClick = onRetry) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+            Spacer(modifier = Modifier.height(28.dp))
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BluePrimary
+                ),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(Icons.Default.Refresh, null, tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Retry")
+                Text("Try Again", fontSize = 14.sp, color = Color.White)
             }
         }
     }
 }
 
 @Composable
-fun EmptyContent(message: String) {
+fun ModernEmptyContent(message: String) {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkBackground),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(32.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = "Empty",
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            Text(
+                text = "⚽",
+                fontSize = 56.sp
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             Text(
                 text = message,
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
             )
         }
-    }
-}
-
-/**
- * Format match date/time
- */
-fun formatMatchTime(dateString: String): String {
-    return try {
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
-        val outputFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val date = inputFormat.parse(dateString)
-        outputFormat.format(date ?: Date())
-    } catch (e: Exception) {
-        dateString
     }
 }

@@ -11,16 +11,23 @@ import com.google.firebase.perf.FirebasePerformance
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.ktx.remoteConfig
 import com.google.firebase.remoteconfig.ktx.remoteConfigSettings
-import ke.nucho.sportshublive.data.api.ApiKeyManager
+import ke.nucho.sportshublive.data.api.ApiConfigManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
- * Application class for SportsHub Live
- * Initializes Firebase and other app-wide configurations
+ * Application class for Football Live Scores
+ * Initializes Firebase and API configuration
  */
 class SportsHubApplication : Application() {
 
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var apiConfigManager: ApiConfigManager
+
     companion object {
-        private const val TAG = "SportsHubApplication"
+        private const val TAG = "SportsHubApp"
 
         lateinit var instance: SportsHubApplication
             private set
@@ -36,7 +43,7 @@ class SportsHubApplication : Application() {
         super.onCreate()
 
         try {
-            Log.d(TAG, "🚀 Starting SportsHub Application...")
+            Log.d(TAG, "⚽ Starting Football Live Scores App...")
 
             instance = this
 
@@ -57,8 +64,11 @@ class SportsHubApplication : Application() {
             // Initialize Remote Config
             initializeRemoteConfig()
 
+            // Initialize API Config Manager
+            initializeApiConfig()
+
             // Log app start
-            logEvent("app_opened", null)
+            logEvent("app_opened", mapOf("sport" to "football"))
 
             Log.d(TAG, "✓ Application initialization complete")
 
@@ -68,12 +78,6 @@ class SportsHubApplication : Application() {
         }
     }
 
-    override fun onTerminate() {
-        super.onTerminate()
-        // Cleanup ApiKeyManager coroutines
-        ApiKeyManager.cleanup()
-    }
-
     /**
      * Initialize Firebase Crashlytics
      */
@@ -81,7 +85,7 @@ class SportsHubApplication : Application() {
         try {
             FirebaseCrashlytics.getInstance().apply {
                 setCrashlyticsCollectionEnabled(true)
-                log("SportsHub Live initialized")
+                log("Football Live Scores initialized")
             }
             Log.d(TAG, "✓ Crashlytics initialized")
         } catch (e: Exception) {
@@ -120,39 +124,71 @@ class SportsHubApplication : Application() {
 
             remoteConfig.setConfigSettingsAsync(configSettings)
 
-            // Set default values including API keys
+            // Set default values for football app
             remoteConfig.setDefaultsAsync(
                 mapOf(
-                    // API Keys Configuration (JSON array format)
-                    "api_keys_json" to """["dfa5bc422e979517069be14236ec78e5"]""",
-                    "api_key_selection_mode" to "random", // "random" or "round_robin"
+                    // API Provider Configuration
+                    "api_provider" to "api_sports", // "api_sports" or "football_data"
+
+                    // API Configuration JSON
+                    "api_config_json" to """
+                        {
+                            "api_sports": {
+                                "base_url": "https://v3.football.api-sports.io",
+                                "api_key": "YOUR_API_SPORTS_KEY_HERE",
+                                "rate_limit": 100,
+                                "features": {
+                                    "live_scores": true,
+                                    "historical_data": true,
+                                    "predictions": true,
+                                    "statistics": true,
+                                    "h2h": true,
+                                    "lineups": true,
+                                    "max_days_back": 365,
+                                    "max_days_forward": 30
+                                }
+                            },
+                            "football_data": {
+                                "base_url": "https://api.football-data.org/v4",
+                                "api_key": "YOUR_FOOTBALL_DATA_KEY_HERE",
+                                "rate_limit": 10,
+                                "features": {
+                                    "live_scores": true,
+                                    "historical_data": true,
+                                    "predictions": false,
+                                    "statistics": true,
+                                    "h2h": true,
+                                    "lineups": false,
+                                    "max_days_back": 90,
+                                    "max_days_forward": 30
+                                }
+                            }
+                        }
+                    """.trimIndent(),
 
                     // App Configuration
                     "enable_analytics" to true,
-                    "auto_refresh_interval" to 30000L,
-                    "cache_duration" to 300000L,
+                    "auto_refresh_interval" to 30000L, // 30 seconds
+                    "cache_duration" to 300000L, // 5 minutes
 
-                    // Sports Feature Flags
-                    "enable_football" to true,
-                    "enable_basketball" to true,
-                    "enable_hockey" to true,
-                    "enable_formula1" to true,
-                    "enable_volleyball" to true,
-                    "enable_rugby" to true,
+                    // Feature Flags (Football only)
+                    "enable_live_view" to true,
+                    "enable_predictions" to true,
+                    "enable_statistics" to true,
+                    "enable_lineups" to true,
+                    "enable_h2h" to true,
 
                     // Maintenance
                     "maintenance_mode" to false,
                     "maintenance_message" to "We're updating the app. Please try again shortly.",
 
-                    // API Key Reset Interval (in hours) - changed to Double
-                    "api_key_reset_interval_hours" to 0.25 // 15 minutes
+                    // UI Configuration
+                    "default_leagues" to "39,140,78,135,61,2,3", // EPL, La Liga, Bundesliga, Serie A, Ligue 1, UCL, UEL
+                    "show_league_filter" to true,
+                    "show_date_selector" to true,
+                    "max_live_refresh_count" to 60 // Maximum auto-refresh cycles
                 )
             )
-
-            // Initialize ApiKeyManager with default values
-            // This starts the automatic reset timer
-            ApiKeyManager.initialize(remoteConfig)
-            Log.d(TAG, "✓ ApiKeyManager initialized with defaults")
 
             // Fetch remote config values
             fetchRemoteConfig()
@@ -161,6 +197,54 @@ class SportsHubApplication : Application() {
         } catch (e: Exception) {
             Log.e(TAG, "✗ Remote Config initialization failed", e)
         }
+    }
+
+    /**
+     * Initialize API Config Manager
+     */
+    private fun initializeApiConfig() {
+        try {
+            apiConfigManager = ApiConfigManager()
+
+            // Fetch and activate config asynchronously
+            applicationScope.launch {
+                val success = apiConfigManager.fetchAndActivate()
+                if (success) {
+                    val config = apiConfigManager.getApiConfig()
+                    config.onSuccess {
+                        Log.d(TAG, "✓ API Config loaded: ${it.provider}")
+                        Log.d(TAG, "✓ Base URL: ${it.baseUrl}")
+                        Log.d(TAG, "✓ Rate Limit: ${it.rateLimitPerMinute}/min")
+
+                        // Log feature availability
+                        logFeatureAvailability(it.features)
+                    }.onFailure {
+                        Log.e(TAG, "✗ Failed to load API config", it)
+                    }
+                } else {
+                    Log.w(TAG, "⚠ Using default API config")
+                }
+            }
+
+            Log.d(TAG, "✓ API Config Manager initialized")
+        } catch (e: Exception) {
+            Log.e(TAG, "✗ API Config Manager initialization failed", e)
+        }
+    }
+
+    /**
+     * Log feature availability
+     */
+    private fun logFeatureAvailability(features: ApiConfigManager.ApiFeatures) {
+        Log.d(TAG, "📊 Available Features:")
+        Log.d(TAG, "  - Live Scores: ${features.supportsLiveScores}")
+        Log.d(TAG, "  - Historical Data: ${features.supportsHistoricalData}")
+        Log.d(TAG, "  - Predictions: ${features.supportsPredictions}")
+        Log.d(TAG, "  - Statistics: ${features.supportsStatistics}")
+        Log.d(TAG, "  - H2H: ${features.supportsH2H}")
+        Log.d(TAG, "  - Lineups: ${features.supportsLineups}")
+        Log.d(TAG, "  - Max Days Back: ${features.maxDaysBack}")
+        Log.d(TAG, "  - Max Days Forward: ${features.maxDaysForward}")
     }
 
     /**
@@ -173,16 +257,16 @@ class SportsHubApplication : Application() {
                     val updated = task.result
                     Log.d(TAG, "Remote config fetched. Updated: $updated")
 
-                    // Reload API keys if config was updated
-                    // This will restart the automatic reset timer with new interval
+                    // Reload API config if updated
                     if (updated) {
-                        ApiKeyManager.reloadFromRemoteConfig(remoteConfig)
-                        Log.d(TAG, "✓ API keys reloaded from Remote Config")
-
-                        // Log the current reset interval
-                        val intervalHours = remoteConfig.getDouble("api_key_reset_interval_hours")
-                        val intervalMinutes = intervalHours * 60
-                        Log.d(TAG, "✓ API key reset interval: $intervalMinutes minutes")
+                        applicationScope.launch {
+                            val success = apiConfigManager.fetchAndActivate()
+                            if (success) {
+                                Log.d(TAG, "✓ API config reloaded from Remote Config")
+                                val provider = apiConfigManager.getProviderName()
+                                Log.d(TAG, "✓ Active provider: $provider")
+                            }
+                        }
                     }
 
                     logEvent("remote_config_fetched", mapOf("updated" to updated.toString()))
@@ -235,30 +319,52 @@ class SportsHubApplication : Application() {
 
     /**
      * Manually refresh Remote Config
-     * Call this when user triggers a manual refresh
      */
     fun refreshRemoteConfig() {
         remoteConfig.fetchAndActivate()
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    ApiKeyManager.reloadFromRemoteConfig(remoteConfig)
-                    Log.d(TAG, "✓ Remote Config manually refreshed")
+                    applicationScope.launch {
+                        apiConfigManager.fetchAndActivate()
+                        Log.d(TAG, "✓ Remote Config manually refreshed")
+                    }
                 }
             }
     }
 
     /**
-     * Get API Key Manager debug info
+     * Get current API provider info
      */
-    fun getApiKeyDebugInfo(): String {
-        return ApiKeyManager.getDebugInfo()
+    fun getApiProviderInfo(): String {
+        return apiConfigManager.getProviderName()
     }
 
     /**
-     * Manually trigger API key reset (for testing/debugging)
+     * Check if a feature is supported
      */
-    fun manuallyResetApiKeys() {
-        ApiKeyManager.resetFailedKeys()
-        Log.d(TAG, "✓ Manually reset all failed API keys")
+    fun isFeatureSupported(feature: String): Boolean {
+        return apiConfigManager.isFeatureSupported(feature)
+    }
+
+    /**
+     * Get API config for debugging
+     */
+    fun getApiConfigDebugInfo(): String {
+        val config = apiConfigManager.getApiConfig().getOrNull()
+        return if (config != null) {
+            buildString {
+                appendLine("API Provider: ${config.provider}")
+                appendLine("Base URL: ${config.baseUrl}")
+                appendLine("Rate Limit: ${config.rateLimitPerMinute}/min")
+                appendLine("\nFeatures:")
+                appendLine("  Live Scores: ${config.features.supportsLiveScores}")
+                appendLine("  Predictions: ${config.features.supportsPredictions}")
+                appendLine("  Statistics: ${config.features.supportsStatistics}")
+                appendLine("  H2H: ${config.features.supportsH2H}")
+                appendLine("  Lineups: ${config.features.supportsLineups}")
+            }
+        } else {
+            "API Config not loaded"
+        }
     }
 }

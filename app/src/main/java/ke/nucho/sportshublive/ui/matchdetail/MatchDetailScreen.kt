@@ -1,9 +1,11 @@
 package ke.nucho.sportshublive.ui.matchdetail
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,80 +19,91 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import ke.nucho.sportshublive.data.models.Fixture
+import ke.nucho.sportshublive.data.models.*
 import java.text.SimpleDateFormat
 import java.util.*
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MatchDetailScreen(
-    fixtureId: Int,
-    sport: String,
-    onBackClick: () -> Unit,
-    viewModel: MatchDetailViewModel = viewModel(
-        factory = MatchDetailViewModelFactory(fixtureId, sport)
-    )
+    viewModel: MatchDetailViewModel = viewModel(),
+    onBackClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
-    val isLive by viewModel.isLive.collectAsStateWithLifecycle()
-
-    // Auto-refresh for live matches
-    LaunchedEffect(isLive) {
-        if (isLive) {
-            while (true) {
-                kotlinx.coroutines.delay(30000) // 30 seconds
-                viewModel.refresh()
-            }
-        }
-    }
+    val fixture by viewModel.fixture.collectAsStateWithLifecycle()
+    val statistics by viewModel.statistics.collectAsStateWithLifecycle()
+    val events by viewModel.events.collectAsStateWithLifecycle()
+    val lineups by viewModel.lineups.collectAsStateWithLifecycle()
+    val h2h by viewModel.h2h.collectAsStateWithLifecycle()
+    val isAutoRefresh by viewModel.isAutoRefresh.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Match Details") },
+                title = {
+                    Column {
+                        Text(
+                            text = fixture?.league?.name ?: "Match Details",
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        fixture?.league?.round?.let { round ->
+                            Text(
+                                text = round,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, "Back")
                     }
                 },
                 actions = {
-                    if (isLive) {
-                        IconButton(onClick = { viewModel.refresh() }) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                "Refresh",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                    if (isAutoRefresh) {
+                        LiveIndicator()
+                    }
+                    IconButton(onClick = { viewModel.refresh() }) {
+                        Icon(Icons.Default.Refresh, "Refresh")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
-    ) { padding ->
-        when (val state = uiState) {
-            is MatchDetailUiState.Loading -> {
-                LoadingContent()
-            }
+    ) { paddingValues ->
+        when (uiState) {
+            is MatchDetailUiState.Loading -> LoadingContent(paddingValues)
             is MatchDetailUiState.Success -> {
-                MatchDetailContent(
-                    fixture = state.fixture,
-                    selectedTab = selectedTab,
-                    onTabSelected = { viewModel.selectTab(it) },
-                    sport = sport,
-                    modifier = Modifier.padding(padding)
-                )
+                fixture?.let { match ->
+                    SuccessContent(
+                        fixture = match,
+                        selectedTab = selectedTab,
+                        statistics = statistics,
+                        events = events,
+                        lineups = lineups,
+                        h2h = h2h,
+                        onTabSelected = { tab -> viewModel.selectTab(tab) },
+                        paddingValues = paddingValues
+                    )
+                }
             }
             is MatchDetailUiState.Error -> {
                 ErrorContent(
-                    message = state.message,
-                    onRetry = { viewModel.refresh() }
+                    message = (uiState as MatchDetailUiState.Error).message,
+                    onRetry = { viewModel.refresh() },
+                    paddingValues = paddingValues
                 )
             }
         }
@@ -98,34 +111,80 @@ fun MatchDetailScreen(
 }
 
 @Composable
-fun MatchDetailContent(
+fun LiveIndicator() {
+    var pulse by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            pulse = !pulse
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.padding(end = 8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(
+                    if (pulse) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                )
+        )
+        Text(
+            text = "LIVE",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+}
+
+@Composable
+fun SuccessContent(
     fixture: Fixture,
     selectedTab: MatchDetailTab,
+    statistics: List<TeamStatistics>,
+    events: List<MatchEvent>,
+    lineups: List<TeamLineup>,
+    h2h: List<Fixture>,
     onTabSelected: (MatchDetailTab) -> Unit,
-    sport: String,
-    modifier: Modifier = Modifier
+    paddingValues: PaddingValues
 ) {
-    Column(
-        modifier = modifier.fillMaxSize()
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues),
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         // Match Header
-        MatchHeader(fixture = fixture)
+        item {
+            MatchHeader(fixture)
+        }
 
-        // Tab Row
-        MatchDetailTabRow(
-            selectedTab = selectedTab,
-            onTabSelected = onTabSelected,
-            sport = sport
-        )
+        // Tabs
+        item {
+            TabRow(
+                selectedTab = selectedTab,
+                onTabSelected = onTabSelected
+            )
+        }
 
         // Tab Content
-        when (selectedTab) {
-            MatchDetailTab.OVERVIEW -> OverviewTab(fixture)
-            MatchDetailTab.STATS -> StatsTab(fixture, sport)
-            MatchDetailTab.EVENTS -> EventsTab(fixture, sport)
-            MatchDetailTab.LINEUPS -> LineupsTab(fixture, sport)
-            MatchDetailTab.H2H -> HeadToHeadTab(fixture, sport)
-            MatchDetailTab.TABLE -> StandingsTab(fixture, sport)
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            when (selectedTab) {
+                MatchDetailTab.OVERVIEW -> OverviewTab(fixture, statistics, events)
+                MatchDetailTab.STATS -> StatisticsTab(statistics)
+                MatchDetailTab.LINEUPS -> LineupsTab(lineups)
+                MatchDetailTab.EVENTS -> EventsTab(events)
+                MatchDetailTab.H2H -> HeadToHeadTab(h2h)
+            }
         }
     }
 }
@@ -138,33 +197,43 @@ fun MatchHeader(fixture: Fixture) {
             .padding(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        ),
+        elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // League Info
+            // Venue and Date
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                AsyncImage(
-                    model = fixture.league.logo,
+                Icon(
+                    imageVector = Icons.Default.Place,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "${fixture.league.name} - ${fixture.league.round}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    text = fixture.fixture.venue.name ?: "Unknown Venue",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = formatMatchDate(fixture.fixture.date),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Teams and Score
             Row(
@@ -173,172 +242,175 @@ fun MatchHeader(fixture: Fixture) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Home Team
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                TeamColumn(
+                    team = fixture.teams.home,
                     modifier = Modifier.weight(1f)
-                ) {
-                    AsyncImage(
-                        model = fixture.teams.home.logo,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = fixture.teams.home.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
+                )
 
                 // Score
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                ) {
-                    if (fixture.fixture.status.short != "NS") {
-                        Row(
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "${fixture.goals.home ?: 0}",
-                                style = MaterialTheme.typography.displayLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = " - ",
-                                style = MaterialTheme.typography.displayMedium,
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            )
-                            Text(
-                                text = "${fixture.goals.away ?: 0}",
-                                style = MaterialTheme.typography.displayLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = "VS",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Status Badge
-                    MatchStatusBadge(fixture)
-                }
+                ScoreColumn(
+                    fixture = fixture,
+                    modifier = Modifier.weight(1f)
+                )
 
                 // Away Team
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    AsyncImage(
-                        model = fixture.teams.away.logo,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = fixture.teams.away.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
+                TeamColumn(
+                    team = fixture.teams.away,
+                    modifier = Modifier.weight(1f),
+                    alignEnd = true
+                )
             }
 
-            // Match Date/Time or Venue
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = fixture.fixture.venue?.name ?: "Venue TBA",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
+            // Referee
+            fixture.fixture.referee?.let { referee ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Referee: $referee",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun MatchStatusBadge(fixture: Fixture) {
-    val (text, color, isLive) = when (fixture.fixture.status.short) {
-        "NS" -> Triple("Not Started", Color.Gray, false)
-        "1H", "2H", "ET", "P" -> Triple("${fixture.fixture.status.elapsed}'", Color(0xFF4CAF50), true)
-        "HT" -> Triple("Half Time", Color(0xFFFF9800), true)
-        "FT" -> Triple("Full Time", Color.Gray, false)
-        "AET" -> Triple("After Extra Time", Color.Gray, false)
-        "PEN" -> Triple("Penalties", Color(0xFFFF9800), true)
-        else -> Triple(fixture.fixture.status.long, Color.Gray, false)
-    }
-
-    Surface(
-        color = color.copy(alpha = 0.2f),
-        shape = RoundedCornerShape(8.dp)
+fun TeamColumn(
+    team: Team,
+    modifier: Modifier = Modifier,
+    alignEnd: Boolean = false
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        AsyncImage(
+            model = team.logo,
+            contentDescription = team.name,
+            modifier = Modifier.size(64.dp)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = team.name,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+fun ScoreColumn(
+    fixture: Fixture,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Match Status Badge
+        val (statusText, statusColor) = getMatchStatusInfo(fixture)
+
+        Surface(
+            color = statusColor.copy(alpha = 0.2f),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            if (isLive) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(color)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-            }
             Text(
-                text = text,
+                text = statusText,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 style = MaterialTheme.typography.labelMedium,
-                color = color,
+                color = statusColor,
                 fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Score
+        if (fixture.fixture.status.short != "NS" &&
+            fixture.goals.home != null &&
+            fixture.goals.away != null) {
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = fixture.goals.home.toString(),
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if ((fixture.goals.home ?: 0) > (fixture.goals.away ?: 0))
+                        MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    text = " : ",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                Text(
+                    text = fixture.goals.away.toString(),
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if ((fixture.goals.away ?: 0) > (fixture.goals.home ?: 0))
+                        MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        } else {
+            Text(
+                text = "VS",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = formatMatchTime(fixture.fixture.date),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
             )
         }
     }
 }
 
 @Composable
-fun MatchDetailTabRow(
+fun TabRow(
     selectedTab: MatchDetailTab,
-    onTabSelected: (MatchDetailTab) -> Unit,
-    sport: String
+    onTabSelected: (MatchDetailTab) -> Unit
 ) {
-    val tabs = getAvailableTabs(sport)
-
     ScrollableTabRow(
-        selectedTabIndex = tabs.indexOf(selectedTab),
+        selectedTabIndex = selectedTab.ordinal,
         containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.primary
+        contentColor = MaterialTheme.colorScheme.primary,
+        edgePadding = 16.dp
     ) {
-        tabs.forEach { tab ->
+        MatchDetailTab.entries.forEach { tab ->
             Tab(
                 selected = selectedTab == tab,
                 onClick = { onTabSelected(tab) },
                 text = {
                     Text(
-                        text = tab.title,
+                        text = when (tab) {
+                            MatchDetailTab.OVERVIEW -> "Overview"
+                            MatchDetailTab.STATS -> "Stats"
+                            MatchDetailTab.LINEUPS -> "Lineups"
+                            MatchDetailTab.EVENTS -> "Events"
+                            MatchDetailTab.H2H -> "H2H"
+                        },
                         fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
                     )
                 }
@@ -348,453 +420,626 @@ fun MatchDetailTabRow(
 }
 
 @Composable
-fun OverviewTab(fixture: Fixture) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+fun OverviewTab(
+    fixture: Fixture,
+    statistics: List<TeamStatistics>,
+    events: List<MatchEvent>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Key Events
+        if (events.isNotEmpty()) {
+            SectionTitle("Key Events")
+            KeyEventsList(events.take(5))
+        }
+
         // Quick Stats
-        item {
-            QuickStatsCard(fixture)
+        if (statistics.isNotEmpty()) {
+            SectionTitle("Quick Stats")
+            QuickStatsCard(statistics)
         }
 
-        // Last Matches (if available)
-        item {
-            Text(
-                text = "Recent Form",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
+        // Match Info
+        SectionTitle("Match Information")
+        MatchInfoCard(fixture)
+    }
+}
 
-        // Placeholder for recent form
-        item {
-            RecentFormPlaceholder()
+@Composable
+fun StatisticsTab(statistics: List<TeamStatistics>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (statistics.isEmpty()) {
+            EmptyStateMessage("No statistics available yet")
+        } else {
+            statistics.forEach { teamStat ->
+                teamStat.statistics.forEach { stat ->
+                    StatisticItem(
+                        statType = stat.type,
+                        homeValue = if (statistics.indexOf(teamStat) == 0) stat.value else null,
+                        awayValue = if (statistics.indexOf(teamStat) == 1) stat.value else null,
+                        homeTeam = statistics.getOrNull(0)?.team,
+                        awayTeam = statistics.getOrNull(1)?.team
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-fun QuickStatsCard(fixture: Fixture) {
+fun LineupsTab(lineups: List<TeamLineup>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (lineups.isEmpty()) {
+            EmptyStateMessage("Lineups not available yet")
+        } else {
+            lineups.forEach { lineup ->
+                LineupCard(lineup)
+            }
+        }
+    }
+}
+
+@Composable
+fun EventsTab(events: List<MatchEvent>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (events.isEmpty()) {
+            EmptyStateMessage("No events recorded yet")
+        } else {
+            events.forEach { event ->
+                EventCard(event)
+            }
+        }
+    }
+}
+
+@Composable
+fun HeadToHeadTab(h2h: List<Fixture>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (h2h.isEmpty()) {
+            EmptyStateMessage("No head-to-head data available")
+        } else {
+            SectionTitle("Last 5 Meetings")
+            h2h.forEach { match ->
+                H2HMatchCard(match)
+            }
+        }
+    }
+}
+
+// Helper Composables
+
+@Composable
+fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(vertical = 8.dp)
+    )
+}
+
+@Composable
+fun KeyEventsList(events: List<MatchEvent>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Quick Stats",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Placeholder stats - will be populated from API
-            QuickStatItem("Shots on Target", "5", "3")
-            QuickStatItem("Possession", "58%", "42%")
-            QuickStatItem("Corners", "7", "4")
-        }
-    }
-}
-
-@Composable
-fun QuickStatItem(label: String, homeValue: String, awayValue: String) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = homeValue,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = awayValue,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-    }
-}
-
-@Composable
-fun StatsTab(fixture: Fixture, sport: String) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Text(
-                text = "Match Statistics",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        // Sample statistics with visual bars
-        item { StatItemWithBar("Ball Possession", 58, 42) }
-        item { StatItemWithBar("Shots on Goal", 12, 8) }
-        item { StatItemWithBar("Shots off Goal", 5, 7) }
-        item { StatItemWithBar("Total Shots", 17, 15) }
-        item { StatItemWithBar("Blocked Shots", 3, 2) }
-        item { StatItemWithBar("Corner Kicks", 7, 4) }
-        item { StatItemWithBar("Offsides", 2, 3) }
-        item { StatItemWithBar("Fouls", 11, 14) }
-        item { StatItemWithBar("Yellow Cards", 2, 3) }
-    }
-}
-
-@Composable
-fun StatItemWithBar(
-    label: String,
-    homeValue: Int,
-    awayValue: Int
-) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = homeValue.toString(),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = awayValue.toString(),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        val total = homeValue + awayValue
-        val homePercentage = if (total > 0) homeValue.toFloat() / total else 0.5f
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(homePercentage)
-                    .background(MaterialTheme.colorScheme.primary)
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.secondary)
-            )
-        }
-    }
-}
-
-@Composable
-fun EventsTab(fixture: Fixture, sport: String) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item {
-            Text(
-                text = "Match Events",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Sample events - replace with actual data
-        items(listOf(
-            EventItem("12'", "⚽ Goal", "John Doe", true),
-            EventItem("25'", "🟨 Yellow Card", "Jane Smith", false),
-            EventItem("45'", "⚽ Goal", "Mike Johnson", true),
-            EventItem("67'", "🔄 Substitution", "Player Out → Player In", false)
-        )) { event ->
-            MatchEventCard(event)
-        }
-    }
-}
-
-@Composable
-fun MatchEventCard(event: EventItem) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(12.dp),
-        horizontalArrangement = if (event.isHome) Arrangement.Start else Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (event.isHome) {
-            EventContent(event)
-        } else {
-            EventContent(event, alignEnd = true)
-        }
-    }
-}
-
-@Composable
-fun EventContent(event: EventItem, alignEnd: Boolean = false) {
-    Column(
-        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = event.time,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = event.type,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-        Text(
-            text = event.player,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun LineupsTab(fixture: Fixture, sport: String) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Lineups feature coming soon!",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun HeadToHeadTab(fixture: Fixture, sport: String) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Text(
-                text = "Head to Head",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        // Sample H2H matches
-        items(3) {
-            H2HMatchCard()
-        }
-    }
-}
-
-@Composable
-fun H2HMatchCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Team A", modifier = Modifier.weight(1f))
-            Text("2 - 1", fontWeight = FontWeight.Bold)
-            Text("Team B", modifier = Modifier.weight(1f), textAlign = TextAlign.End)
-        }
-    }
-}
-
-@Composable
-fun StandingsTab(fixture: Fixture, sport: String) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item {
-            Text(
-                text = "League Standings",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Table header
-        item {
-            StandingsHeader()
-        }
-
-        // Sample standings
-        items(10) { index ->
-            StandingsRow(position = index + 1, team = "Team ${index + 1}")
-        }
-    }
-}
-
-@Composable
-fun StandingsHeader() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text("#", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-        Text("Team", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-        Text("P", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-        Text("W", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-        Text("D", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-        Text("L", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-        Text("Pts", modifier = Modifier.width(40.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-@Composable
-fun StandingsRow(position: Int, team: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp, horizontal = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("$position", modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodySmall)
-        Text(team, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-        Text("10", modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodySmall)
-        Text("7", modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodySmall)
-        Text("2", modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodySmall)
-        Text("1", modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodySmall)
-        Text("23", modifier = Modifier.width(40.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-fun RecentFormPlaceholder() {
-    Text(
-        text = "Recent form data will appear here",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-    )
-}
-
-@Composable
-fun LoadingContent() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator()
-    }
-}
-
-@Composable
-fun ErrorContent(message: String, onRetry: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
-        ) {
-            Icon(
-                Icons.Default.Warning,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(text = message, textAlign = TextAlign.Center)
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onRetry) {
-                Text("Retry")
+        Column(modifier = Modifier.padding(16.dp)) {
+            events.forEach { event ->
+                EventRow(event)
+                if (event != events.last()) {
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                }
             }
         }
     }
 }
 
-// Helper functions
-fun getAvailableTabs(sport: String): List<MatchDetailTab> {
-    return when (sport) {
-        "Football" -> listOf(
-            MatchDetailTab.OVERVIEW,
-            MatchDetailTab.STATS,
-            MatchDetailTab.EVENTS,
-            MatchDetailTab.LINEUPS,
-            MatchDetailTab.H2H,
-            MatchDetailTab.TABLE
-        )
-        else -> listOf(
-            MatchDetailTab.OVERVIEW,
-            MatchDetailTab.STATS,
-            MatchDetailTab.EVENTS
+@Composable
+fun EventRow(event: MatchEvent) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val icon = when (event.type) {
+                "Goal" -> "⚽"
+                "Card" -> if (event.detail.contains("Yellow")) "🟨" else "🟥"
+                "subst" -> "🔄"
+                else -> "•"
+            }
+            Text(text = icon, style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = event.player.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = event.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Text(
+            text = "${event.time.elapsed}'",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
         )
     }
 }
 
-// Data classes
-enum class MatchDetailTab(val title: String) {
-    OVERVIEW("Overview"),
-    STATS("Stats"),
-    EVENTS("Events"),
-    LINEUPS("Lineups"),
-    H2H("H2H"),
-    TABLE("Table")
+@Composable
+fun QuickStatsCard(statistics: List<TeamStatistics>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            val keyStats = listOf("Shots on Goal", "Possession", "Passes")
+            keyStats.forEach { statName ->
+                val homeStat = statistics.getOrNull(0)?.statistics?.find { it.type == statName }
+                val awayStat = statistics.getOrNull(1)?.statistics?.find { it.type == statName }
+
+                if (homeStat != null && awayStat != null) {
+                    StatisticItem(
+                        statType = statName,
+                        homeValue = homeStat.value,
+                        awayValue = awayStat.value,
+                        homeTeam = statistics[0].team,
+                        awayTeam = statistics[1].team
+                    )
+                    if (statName != keyStats.last()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                }
+            }
+        }
+    }
 }
 
-data class EventItem(
-    val time: String,
-    val type: String,
-    val player: String,
-    val isHome: Boolean
-)
+@Composable
+fun StatisticItem(
+    statType: String,
+    homeValue: Any?,
+    awayValue: Any?,
+    homeTeam: Team?,
+    awayTeam: Team?
+) {
+    Column {
+        Text(
+            text = statType,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = homeValue?.toString() ?: "0",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
 
-sealed class MatchDetailUiState {
-    object Loading : MatchDetailUiState()
-    data class Success(val fixture: Fixture) : MatchDetailUiState()
-    data class Error(val message: String) : MatchDetailUiState()
+            // Progress bar for percentage stats
+            if (statType.contains("Possession") || statType.contains("%")) {
+                val homePercent = homeValue?.toString()?.replace("%", "")?.toFloatOrNull() ?: 0f
+                val awayPercent = awayValue?.toString()?.replace("%", "")?.toFloatOrNull() ?: 0f
+                val total = homePercent + awayPercent
+
+                if (total > 0) {
+                    LinearProgressIndicator(
+                        progress = homePercent / total,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 16.dp)
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+
+            Text(
+                text = awayValue?.toString() ?: "0",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun MatchInfoCard(fixture: Fixture) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            InfoRow("Competition", fixture.league.name)
+            InfoRow("Season", fixture.league.season.toString())
+            fixture.league.round?.let { InfoRow("Round", it) }
+            fixture.fixture.venue.city?.let { InfoRow("City", it) }
+            InfoRow("Date", formatMatchDate(fixture.fixture.date))
+        }
+    }
+}
+
+@Composable
+fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+fun LineupCard(lineup: TeamLineup) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(
+                    model = lineup.team.logo,
+                    contentDescription = lineup.team.name,
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = lineup.team.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Formation: ${lineup.formation}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Starting XI",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            lineup.startXI.forEach { player ->
+                PlayerRow(player.player)
+            }
+        }
+    }
+}
+
+@Composable
+fun PlayerRow(player: PlayerDetails) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(24.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = player.number.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = player.name,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        Text(
+            text = player.pos,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+fun EventCard(event: MatchEvent) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "${event.time.elapsed}'",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val icon = when (event.type) {
+                        "Goal" -> "⚽"
+                        "Card" -> if (event.detail.contains("Yellow")) "🟨" else "🟥"
+                        "subst" -> "🔄"
+                        else -> "•"
+                    }
+                    Text(text = icon, style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = event.detail,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = event.player.name,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                event.assist?.let { assist ->
+                    Text(
+                        text = "Assist: ${assist.name}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Text(
+                    text = event.team.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun H2HMatchCard(fixture: Fixture) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = formatMatchDate(fixture.fixture.date),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = fixture.teams.home.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Text(
+                    text = "${fixture.goals.home} - ${fixture.goals.away}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Text(
+                    text = fixture.teams.away.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyStateMessage(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun LoadingContent(paddingValues: PaddingValues) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Loading match details...",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+
+@Composable
+fun ErrorContent(
+    message: String,
+    onRetry: () -> Unit,
+    paddingValues: PaddingValues
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Error",
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = onRetry) {
+                Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Try Again")
+            }
+        }
+    }
+}
+
+// Helper Functions
+
+fun getMatchStatusInfo(fixture: Fixture): Pair<String, Color> {
+    return when (fixture.fixture.status.short) {
+        "NS" -> "Not Started" to Color.Gray
+        "1H" -> "1st Half ${fixture.fixture.status.elapsed}'" to Color(0xFF4CAF50)
+        "2H" -> "2nd Half ${fixture.fixture.status.elapsed}'" to Color(0xFF4CAF50)
+        "HT" -> "Half Time" to Color(0xFFFF9800)
+        "FT" -> "Full Time" to Color.Gray
+        "ET" -> "Extra Time ${fixture.fixture.status.elapsed}'" to Color(0xFFFF9800)
+        "P" -> "Penalties" to Color(0xFFFF9800)
+        "AET" -> "After Extra Time" to Color.Gray
+        "PEN" -> "After Penalties" to Color.Gray
+        "PST" -> "Postponed" to Color(0xFFF44336)
+        "CANC" -> "Cancelled" to Color(0xFFF44336)
+        "ABD" -> "Abandoned" to Color(0xFFF44336)
+        else -> fixture.fixture.status.long to Color.Gray
+    }
+}
+
+fun formatMatchDate(dateString: String): String {
+    return try {
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
+        val outputFormat = SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault())
+        val date = inputFormat.parse(dateString)
+        outputFormat.format(date ?: Date())
+    } catch (e: Exception) {
+        dateString
+    }
+}
+
+fun formatMatchTime(dateString: String): String {
+    return try {
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
+        val outputFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val date = inputFormat.parse(dateString)
+        outputFormat.format(date ?: Date())
+    } catch (e: Exception) {
+        dateString
+    }
 }

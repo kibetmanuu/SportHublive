@@ -1,1035 +1,677 @@
 package ke.nucho.sportshublive.data.models
 
 import com.google.gson.annotations.SerializedName
-import com.google.gson.annotations.JsonAdapter
-import ke.nucho.sportshublive.data.api.ErrorsDeserializer
-// ==================== COMMON MODELS ====================
 
-data class Paging(
-    val current: Int,
-    val total: Int
-)
-
-// ==================== API-FOOTBALL MODELS ====================
-
-data class FootballResponse(
-    val get: String,
-    val parameters: Map<String, String>,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int,
-    val paging: Paging,
+/**
+ * Main Fixture Response
+ */
+data class FixtureResponse(
+    @SerializedName("response")
     val response: List<Fixture>
 )
 
+/**
+ * Complete Fixture Model
+ */
 data class Fixture(
-    val fixture: FixtureInfo,
+    @SerializedName("fixture")
+    val fixture: FixtureDetails,
+
+    @SerializedName("league")
     val league: League,
+
+    @SerializedName("teams")
     val teams: Teams,
+
+    @SerializedName("goals")
     val goals: Goals,
-    val score: Score
+
+    @SerializedName("score")
+    val score: Score? = null
 )
 
-data class FixtureInfo(
+/**
+ * Fixture Details
+ */
+data class FixtureDetails(
+    @SerializedName("id")
     val id: Int,
-    val referee: String?,
+
+    @SerializedName("referee")
+    val referee: String? = null,
+
+    @SerializedName("timezone")
     val timezone: String,
+
+    @SerializedName("date")
     val date: String,
+
+    @SerializedName("timestamp")
     val timestamp: Long,
-    val periods: Periods,
+
+    @SerializedName("venue")
     val venue: Venue,
-    val status: Status
+
+    @SerializedName("status")
+    val status: MatchStatus
 )
 
-data class Periods(
-    val first: Long?,
-    val second: Long?
-)
-
-data class Venue(
-    val id: Int?,
-    val name: String?,
-    val city: String?
-)
-
-data class Status(
+/**
+ * Match Status
+ */
+data class MatchStatus(
+    @SerializedName("long")
     val long: String,
+
+    @SerializedName("short")
     val short: String,
-    val elapsed: Int?
+
+    @SerializedName("elapsed")
+    val elapsed: Int? = null
 )
 
+/**
+ * Venue Information
+ */
+data class Venue(
+    @SerializedName("id")
+    val id: Int? = null,
+
+    @SerializedName("name")
+    val name: String? = null,
+
+    @SerializedName("city")
+    val city: String? = null
+)
+
+/**
+ * League Information
+ */
 data class League(
+    @SerializedName("id")
     val id: Int,
+
+    @SerializedName("name")
     val name: String,
+
+    @SerializedName("country")
     val country: String,
+
+    @SerializedName("logo")
     val logo: String,
-    val flag: String?,
+
+    @SerializedName("flag")
+    val flag: String? = null,
+
+    @SerializedName("season")
     val season: Int,
-    val round: String?
+
+    @SerializedName("round")
+    val round: String? = null
 )
 
+/**
+ * Teams (Home and Away)
+ */
 data class Teams(
+    @SerializedName("home")
     val home: Team,
+
+    @SerializedName("away")
     val away: Team
 )
 
+/**
+ * Team Information
+ */
 data class Team(
+    @SerializedName("id")
     val id: Int,
+
+    @SerializedName("name")
     val name: String,
+
+    @SerializedName("logo")
     val logo: String,
-    val winner: Boolean?
+
+    @SerializedName("winner")
+    val winner: Boolean? = null
 )
 
+/**
+ * Goals
+ */
 data class Goals(
-    val home: Int?,
-    val away: Int?
+    @SerializedName("home")
+    val home: Int? = null,
+
+    @SerializedName("away")
+    val away: Int? = null
 )
 
+/**
+ * Score (includes halftime, fulltime, extra time, penalty)
+ */
 data class Score(
-    val halftime: Goals,
-    val fulltime: Goals,
-    val extratime: Goals,
-    val penalty: Goals
+    @SerializedName("halftime")
+    val halftime: Goals? = null,
+
+    @SerializedName("fulltime")
+    val fulltime: Goals? = null,
+
+    @SerializedName("extratime")
+    val extratime: Goals? = null,
+
+    @SerializedName("penalty")
+    val penalty: Goals? = null
 )
 
-// ==================== FIXTURE STATISTICS ====================
-
-data class FixtureStatsResponse(
-    val get: String?,
-    val parameters: Map<String, Any>?,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val paging: Paging?,
-    val response: List<FixtureStatistics>?
+/**
+ * Match Statistics Response
+ */
+data class StatisticsResponse(
+    @SerializedName("response")
+    val response: List<TeamStatistics>
 )
 
-data class FixtureStatistics(
-    val team: StatTeam,
+/**
+ * Team Statistics
+ */
+data class TeamStatistics(
+    @SerializedName("team")
+    val team: Team,
+
+    @SerializedName("statistics")
     val statistics: List<Statistic>
 )
 
-data class StatTeam(
-    val id: Int,
-    val name: String,
-    val logo: String
-)
-
+/**
+ * Individual Statistic
+ */
 data class Statistic(
+    @SerializedName("type")
     val type: String,
-    val value: Any? // Can be Int, String, or null
+
+    @SerializedName("value")
+    val value: Any? // Can be String, Int, or null
 )
 
-// ==================== FIXTURE EVENTS ====================
-
-data class FixtureEventsResponse(
-    val get: String?,
-    val parameters: Map<String, Any>?,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val paging: Paging?,
-    val response: List<FixtureEvent>?
+/**
+ * Match Events Response
+ */
+data class EventsResponse(
+    @SerializedName("response")
+    val response: List<MatchEvent>
 )
 
-data class FixtureEvent(
+/**
+ * Match Event (Goals, Cards, Substitutions, etc.)
+ */
+data class MatchEvent(
+    @SerializedName("time")
     val time: EventTime,
-    val team: EventTeam,
-    val player: EventPlayer,
-    val assist: EventPlayer?,
-    val type: String, // "Goal", "Card", "subst"
+
+    @SerializedName("team")
+    val team: Team,
+
+    @SerializedName("player")
+    val player: Player,
+
+    @SerializedName("assist")
+    val assist: Player? = null,
+
+    @SerializedName("type")
+    val type: String, // "Goal", "Card", "subst", etc.
+
+    @SerializedName("detail")
     val detail: String, // "Normal Goal", "Yellow Card", etc.
-    val comments: String?
+
+    @SerializedName("comments")
+    val comments: String? = null
 )
 
+/**
+ * Event Time
+ */
 data class EventTime(
+    @SerializedName("elapsed")
     val elapsed: Int,
-    val extra: Int?
+
+    @SerializedName("extra")
+    val extra: Int? = null
 )
 
-data class EventTeam(
+/**
+ * Player Information
+ */
+data class Player(
+    @SerializedName("id")
     val id: Int,
-    val name: String,
-    val logo: String
-)
 
-data class EventPlayer(
-    val id: Int?,
+    @SerializedName("name")
     val name: String
 )
 
-// ==================== FIXTURE LINEUPS ====================
-
-data class FixtureLineupsResponse(
-    val get: String?,
-    val parameters: Map<String, Any>?,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val paging: Paging?,
-    val response: List<FixtureLineup>?
+/**
+ * Lineups Response
+ */
+data class LineupsResponse(
+    @SerializedName("response")
+    val response: List<TeamLineup>
 )
 
-data class FixtureLineup(
-    val team: LineupTeam,
-    val formation: String?,
-    val startXI: List<LineupPlayer>?,
-    val substitutes: List<LineupPlayer>?,
-    val coach: LineupCoach?
+/**
+ * Team Lineup
+ */
+data class TeamLineup(
+    @SerializedName("team")
+    val team: Team,
+
+    @SerializedName("formation")
+    val formation: String,
+
+    @SerializedName("startXI")
+    val startXI: List<LineupPlayer>,
+
+    @SerializedName("substitutes")
+    val substitutes: List<LineupPlayer>,
+
+    @SerializedName("coach")
+    val coach: Coach
 )
 
-data class LineupTeam(
-    val id: Int,
-    val name: String,
-    val logo: String,
-    val colors: TeamColors?
-)
-
-data class TeamColors(
-    val player: PlayerColors?,
-    val goalkeeper: PlayerColors?
-)
-
-data class PlayerColors(
-    val primary: String?,
-    val number: String?,
-    val border: String?
-)
-
+/**
+ * Lineup Player
+ */
 data class LineupPlayer(
-    val player: PlayerInfo
+    @SerializedName("player")
+    val player: PlayerDetails
 )
 
-data class PlayerInfo(
+/**
+ * Player Details
+ */
+data class PlayerDetails(
+    @SerializedName("id")
     val id: Int,
+
+    @SerializedName("name")
     val name: String,
-    val number: Int?,
-    val pos: String?,
-    val grid: String?
+
+    @SerializedName("number")
+    val number: Int,
+
+    @SerializedName("pos")
+    val pos: String, // "G", "D", "M", "F"
+
+    @SerializedName("grid")
+    val grid: String? = null
 )
 
-data class LineupCoach(
-    val id: Int?,
-    val name: String?,
-    val photo: String?
-)
-
-// ==================== STANDINGS ====================
-
-data class StandingsResponse(
-    val get: String,
-    val parameters: Map<String, String>,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int,
-    val paging: Paging,
-    val response: List<StandingsData>
-)
-
-data class StandingsData(
-    val league: LeagueStandings
-)
-
-data class LeagueStandings(
+/**
+ * Coach Information
+ */
+data class Coach(
+    @SerializedName("id")
     val id: Int,
+
+    @SerializedName("name")
     val name: String,
-    val country: String,
-    val logo: String,
-    val flag: String?,
-    val season: Int,
-    val standings: List<List<Standing>>
+
+    @SerializedName("photo")
+    val photo: String
 )
 
-data class Standing(
-    val rank: Int,
-    val team: Team,
-    val points: Int,
-    val goalsDiff: Int,
-    val group: String,
-    val form: String,
-    val status: String,
-    val description: String?,
-    val all: MatchStats,
-    val home: MatchStats,
-    val away: MatchStats,
-    val update: String
-)
-
-data class MatchStats(
-    val played: Int,
-    val win: Int,
-    val draw: Int,
-    val lose: Int,
-    val goals: MatchGoals
-)
-
-data class MatchGoals(
-    @SerializedName("for") val goalsFor: Int,
-    @SerializedName("against") val goalsAgainst: Int
-)
-
-// ==================== LEAGUES ====================
-
-data class LeaguesResponse(
-    val get: String,
-    val parameters: Map<String, String>,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int,
-    val paging: Paging,
-    val response: List<LeagueData>
-)
-
-data class LeagueData(
-    val league: LeagueInfo,
-    val country: Country,
-    val seasons: List<Season>
-)
-
-data class LeagueInfo(
-    val id: Int,
-    val name: String,
-    val type: String,
-    val logo: String
-)
-
-data class Country(
-    val name: String,
-    val code: String?,
-    val flag: String?
-)
-
-data class Season(
-    val year: Int,
-    val start: String,
-    val end: String,
-    val current: Boolean,
-    val coverage: Coverage
-)
-
-data class Coverage(
-    val fixtures: Fixtures,
-    val standings: Boolean,
-    val players: Boolean,
-    val top_scorers: Boolean,
-    val top_assists: Boolean,
-    val top_cards: Boolean,
-    val injuries: Boolean,
-    val predictions: Boolean,
-    val odds: Boolean
-)
-
-data class Fixtures(
-    val events: Boolean,
-    val lineups: Boolean,
-    val statistics_fixtures: Boolean,
-    val statistics_players: Boolean
-)
-
-// ==================== TEAMS ====================
-
-data class TeamResponse(
-    val get: String,
-    val parameters: Map<String, String>,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int,
-    val paging: Paging,
-    val response: List<TeamData>
-)
-
-data class TeamData(
-    val team: TeamDetails,
-    val venue: VenueDetails
-)
-
-data class TeamDetails(
-    val id: Int,
-    val name: String,
-    val code: String?,
-    val country: String,
-    val founded: Int?,
-    val national: Boolean,
-    val logo: String
-)
-
-data class VenueDetails(
-    val id: Int?,
-    val name: String?,
-    val address: String?,
-    val city: String?,
-    val capacity: Int?,
-    val surface: String?,
-    val image: String?
-)
-
-// ==================== TEAM STATISTICS ====================
-
-data class TeamStatsResponse(
-    val get: String,
-    val parameters: Map<String, String>,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int,
-    val paging: Paging,
-    val response: TeamStatistics?
-)
-
-data class TeamStatistics(
-    val league: League,
-    val team: Team,
-    val form: String
-)
-
-// ==================== PREDICTIONS ====================
-
+/**
+ * Predictions Response (for future features)
+ */
 data class PredictionsResponse(
-    val get: String,
-    val parameters: Map<String, String>,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int,
-    val paging: Paging,
-    val response: List<PredictionData>
+    @SerializedName("response")
+    val response: List<Prediction>
 )
 
-data class PredictionData(
-    val predictions: Predictions,
+/**
+ * Prediction Data
+ */
+data class Prediction(
+    @SerializedName("predictions")
+    val predictions: PredictionDetails,
+
+    @SerializedName("league")
     val league: League,
-    val teams: Teams,
-    val comparison: Comparison,
-    val h2h: List<Fixture>
+
+    @SerializedName("teams")
+    val teams: Teams
 )
 
-data class Predictions(
-    val winner: PredictionWinner?,
-    val win_or_draw: Boolean,
-    val under_over: String?,
-    val goals: PredictionGoals,
-    val advice: String,
-    val percent: PredictionPercent
+/**
+ * Prediction Details
+ */
+data class PredictionDetails(
+    @SerializedName("winner")
+    val winner: Winner? = null,
+
+    @SerializedName("win_or_draw")
+    val winOrDraw: Boolean? = null,
+
+    @SerializedName("under_over")
+    val underOver: String? = null,
+
+    @SerializedName("goals")
+    val goals: GoalsPrediction? = null,
+
+    @SerializedName("advice")
+    val advice: String? = null,
+
+    @SerializedName("percent")
+    val percent: PredictionPercent? = null
 )
 
-data class PredictionWinner(
+/**
+ * Winner Prediction
+ */
+data class Winner(
+    @SerializedName("id")
     val id: Int,
+
+    @SerializedName("name")
     val name: String,
+
+    @SerializedName("comment")
     val comment: String
 )
 
-data class PredictionGoals(
+/**
+ * Goals Prediction
+ */
+data class GoalsPrediction(
+    @SerializedName("home")
     val home: String,
+
+    @SerializedName("away")
     val away: String
 )
 
+/**
+ * Prediction Percentages
+ */
 data class PredictionPercent(
+    @SerializedName("home")
     val home: String,
+
+    @SerializedName("draw")
     val draw: String,
+
+    @SerializedName("away")
     val away: String
 )
 
-data class Comparison(
-    val form: ComparisonStats,
-    val att: ComparisonStats,
-    val def: ComparisonStats,
-    val poisson_distribution: ComparisonStats,
-    val h2h: ComparisonStats,
-    val goals: ComparisonStats,
-    val total: ComparisonStats
+/**
+ * Head to Head Response
+ */
+data class H2HResponse(
+    @SerializedName("response")
+    val response: List<Fixture>
 )
 
-data class ComparisonStats(
-    val home: String,
-    val away: String
+/**
+ * Standings Response
+ */
+data class StandingsResponse(
+    @SerializedName("response")
+    val response: List<LeagueStanding>
 )
 
-// ==================== BASKETBALL MODELS ====================
-
-data class BasketballResponse(
-    val get: String?,
-    val parameters: Map<String, String>?,
-    @JsonAdapter(ErrorsDeserializer::class)
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val response: List<BasketballGame>? = emptyList()
+/**
+ * League Standing
+ */
+data class LeagueStanding(
+    @SerializedName("league")
+    val league: StandingLeague
 )
 
-data class BasketballGame(
+/**
+ * Standing League
+ */
+data class StandingLeague(
+    @SerializedName("id")
     val id: Int,
-    val date: String,
-    val time: String,
-    val timestamp: Long,
-    val timezone: String,
-    val stage: String?,
-    val week: String?,
-    val status: BasketballStatus,
-    val league: BasketballLeague,
-    val country: BasketballCountry,
-    val teams: BasketballTeams,
-    val scores: BasketballScores
-)
 
-data class BasketballStatus(
-    val long: String,
-    val short: String,
-    val timer: String?
-)
-
-data class BasketballLeague(
-    val id: Int,
+    @SerializedName("name")
     val name: String,
-    val type: String,
-    val season: String,
-    val logo: String
-)
 
-data class BasketballCountry(
-    val id: Int,
-    val name: String,
-    val code: String?,
-    val flag: String?
-)
-
-data class BasketballTeams(
-    val home: BasketballTeam,
-    val away: BasketballTeam
-)
-
-data class BasketballTeam(
-    val id: Int,
-    val name: String,
-    val logo: String
-)
-
-data class BasketballScores(
-    val home: BasketballScore,
-    val away: BasketballScore
-)
-
-data class BasketballScore(
-    val quarter_1: Int?,
-    val quarter_2: Int?,
-    val quarter_3: Int?,
-    val quarter_4: Int?,
-    val over_time: Int?,
-    val total: Int?
-)
-
-data class BasketballStandingsResponse(
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val response: List<BasketballStanding>?
-)
-
-data class BasketballStanding(
-    val position: Int,
-    val team: BasketballTeam,
-    val games: BasketballGames
-)
-
-data class BasketballGames(
-    val played: Int,
-    val win: BasketballWinLoss,
-    val lose: BasketballWinLoss
-)
-
-data class BasketballWinLoss(
-    val total: Int?,
-    val percentage: String?
-)
-
-// ==================== HOCKEY MODELS ====================
-
-data class HockeyResponse(
-    val get: String?,
-    val parameters: Map<String, String>?,
-    @JsonAdapter(ErrorsDeserializer::class)
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val response: List<HockeyGame>? = emptyList()
-)
-
-data class HockeyGame(
-    val id: Int,
-    val date: String,
-    val time: String,
-    val timestamp: Long,
-    val timezone: String,
-    val stage: String?,
-    val week: String?,
-    val status: HockeyStatus,
-    val league: HockeyLeague,
-    val country: HockeyCountry,
-    val teams: HockeyTeams,
-    val scores: HockeyScores
-)
-
-data class HockeyStatus(
-    val long: String,
-    val short: String,
-    val timer: String?
-)
-
-data class HockeyLeague(
-    val id: Int,
-    val name: String,
-    val type: String,
-    val season: Int,
-    val logo: String
-)
-
-data class HockeyCountry(
-    val id: Int,
-    val name: String,
-    val code: String?,
-    val flag: String?
-)
-
-data class HockeyTeams(
-    val home: HockeyTeam,
-    val away: HockeyTeam
-)
-
-data class HockeyTeam(
-    val id: Int,
-    val name: String,
-    val logo: String
-)
-
-data class HockeyScores(
-    val home: Int?,
-    val away: Int?
-)
-
-data class HockeyStandingsResponse(
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val response: List<HockeyStanding>?
-)
-
-data class HockeyStanding(
-    val position: Int,
-    val team: HockeyTeam,
-    val games: HockeyGames
-)
-
-data class HockeyGames(
-    val played: Int,
-    val win: HockeyWinLoss,
-    val lose: HockeyWinLoss
-)
-
-data class HockeyWinLoss(
-    val total: Int?,
-    val percentage: String?
-)
-
-// ==================== FORMULA 1 MODELS ====================
-
-data class Formula1Response(
-    val get: String?,
-    val parameters: Map<String, String>?,
-    @JsonAdapter(ErrorsDeserializer::class)
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val response: List<F1Race>? = emptyList()
-)
-
-data class F1Race(
-    val id: Int,
-    val competition: F1Competition,
-    val circuit: F1Circuit,
-    val season: Int,
-    val type: String,
-    val laps: F1Laps,
-    val fastest_lap: F1FastestLap?,
-    val distance: String?,
-    val timezone: String,
-    val date: String,
-    val weather: String?,
-    val status: String
-)
-
-data class F1Competition(
-    val id: Int,
-    val name: String,
-    val location: F1Location
-)
-
-data class F1Location(
+    @SerializedName("country")
     val country: String,
-    val city: String
-)
 
-data class F1Circuit(
-    val id: Int,
-    val name: String,
-    val image: String?
-)
-
-data class F1Laps(
-    val current: Int?,
-    val total: Int?
-)
-
-data class F1FastestLap(
-    val driver: F1Driver,
-    val time: String
-)
-
-data class F1Driver(
-    val id: Int,
-    val name: String
-)
-
-data class F1DriversResponse(
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val response: List<F1DriverStanding>?
-)
-
-data class F1DriverStanding(
-    val position: Int,
-    val driver: F1Driver,
-    val team: F1Team,
-    val points: Int,
-    val wins: Int,
-    val behind: Int?
-)
-
-data class F1Team(
-    val id: Int,
-    val name: String,
-    val logo: String?
-)
-
-// ==================== VOLLEYBALL MODELS ====================
-
-data class VolleyballResponse(
-    val get: String?,
-    val parameters: Map<String, String>?,
-    @JsonAdapter(ErrorsDeserializer::class)
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val response: List<VolleyballGame>? = emptyList()
-)
-
-data class VolleyballGame(
-    val id: Int,
-    val date: String,
-    val time: String,
-    val timestamp: Long,
-    val timezone: String,
-    val stage: String?,
-    val week: String?,
-    val status: VolleyballStatus,
-    val league: VolleyballLeague,
-    val country: VolleyballCountry,
-    val teams: VolleyballTeams,
-    val scores: VolleyballScores
-)
-
-data class VolleyballStatus(
-    val long: String,
-    val short: String,
-    val timer: String?
-)
-
-data class VolleyballLeague(
-    val id: Int,
-    val name: String,
-    val type: String,
-    val season: Int,
-    val logo: String
-)
-
-data class VolleyballCountry(
-    val id: Int,
-    val name: String,
-    val code: String?,
-    val flag: String?
-)
-
-data class VolleyballTeams(
-    val home: VolleyballTeam,
-    val away: VolleyballTeam
-)
-
-data class VolleyballTeam(
-    val id: Int,
-    val name: String,
-    val logo: String
-)
-
-data class VolleyballScores(
-    val home: VolleyballScore?,
-    val away: VolleyballScore?
-)
-
-data class VolleyballScore(
-    val set_1: Int?,
-    val set_2: Int?,
-    val set_3: Int?,
-    val set_4: Int?,
-    val set_5: Int?,
-    val total: Int?
-)
-
-data class VolleyballStandingsResponse(
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val response: List<VolleyballStanding>?
-)
-
-data class VolleyballStanding(
-    val position: Int,
-    val team: VolleyballTeam,
-    val games: VolleyballGames
-)
-
-data class VolleyballGames(
-    val played: Int,
-    val win: VolleyballWinLoss,
-    val lose: VolleyballWinLoss
-)
-
-data class VolleyballWinLoss(
-    val total: Int?,
-    val percentage: String?
-)
-
-// ==================== RUGBY MODELS ====================
-
-data class RugbyResponse(
-    val get: String?,
-    val parameters: Map<String, String>?,
-    @JsonAdapter(ErrorsDeserializer::class)
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val response: List<RugbyGame>? = emptyList()
-)
-
-data class RugbyGame(
-    val id: Int,
-    val date: String,
-    val time: String,
-    val timestamp: Long,
-    val timezone: String,
-    val stage: String?,
-    val week: String?,
-    val status: RugbyStatus,
-    val league: RugbyLeague,
-    val country: RugbyCountry,
-    val teams: RugbyTeams,
-    val scores: RugbyScores
-)
-
-data class RugbyStatus(
-    val long: String,
-    val short: String,
-    val timer: String?
-)
-
-data class RugbyLeague(
-    val id: Int,
-    val name: String,
-    val type: String,
-    val season: Int,
-    val logo: String
-)
-
-data class RugbyCountry(
-    val id: Int,
-    val name: String,
-    val code: String?,
-    val flag: String?
-)
-
-data class RugbyTeams(
-    val home: RugbyTeam,
-    val away: RugbyTeam
-)
-
-data class RugbyTeam(
-    val id: Int,
-    val name: String,
-    val logo: String
-)
-
-data class RugbyScores(
-    val home: Int?,
-    val away: Int?
-)
-
-data class RugbyStandingsResponse(
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val response: List<RugbyStanding>?
-)
-
-data class RugbyStanding(
-    val position: Int,
-    val team: RugbyTeam,
-    val games: RugbyGames
-)
-
-data class RugbyGames(
-    val played: Int,
-    val win: RugbyWinLoss,
-    val lose: RugbyWinLoss
-)
-
-data class RugbyWinLoss(
-    val total: Int?,
-    val percentage: String?
-)
-
-// ==================== TEAM STATISTICS (FOOTBALL) ====================
-
-data class TeamStatisticsResponse(
-    val get: String?,
-    val parameters: Map<String, Any>?,
-    @JsonAdapter(ErrorsDeserializer::class)  // ✅ FIXED
-    val errors: List<String>? = emptyList(),
-    val results: Int?,
-    val response: TeamStatisticsData?
-)
-
-data class TeamStatisticsData(
-    val league: TeamLeagueInfo,
-    val team: TeamInfo,
-    val form: String?,
-    val fixtures: TeamFixturesStats,
-    val goals: TeamGoalsStats,
-    val biggest: TeamBiggestStats,
-    val clean_sheet: TeamCleanSheetStats,
-    val failed_to_score: TeamFailedToScoreStats,
-    val penalty: TeamPenaltyStats,
-    val lineups: List<TeamLineupStats>?,
-    val cards: TeamCardsStats?
-)
-
-data class TeamLeagueInfo(
-    val id: Int,
-    val name: String,
-    val country: String,
+    @SerializedName("logo")
     val logo: String,
-    val flag: String?,
-    val season: Int
+
+    @SerializedName("flag")
+    val flag: String,
+
+    @SerializedName("season")
+    val season: Int,
+
+    @SerializedName("standings")
+    val standings: List<List<Standing>>
 )
 
-data class TeamInfo(
+/**
+ * Standing Entry
+ */
+data class Standing(
+    @SerializedName("rank")
+    val rank: Int,
+
+    @SerializedName("team")
+    val team: Team,
+
+    @SerializedName("points")
+    val points: Int,
+
+    @SerializedName("goalsDiff")
+    val goalsDiff: Int,
+
+    @SerializedName("group")
+    val group: String,
+
+    @SerializedName("form")
+    val form: String,
+
+    @SerializedName("status")
+    val status: String,
+
+    @SerializedName("description")
+    val description: String? = null,
+
+    @SerializedName("all")
+    val all: StandingStats,
+
+    @SerializedName("home")
+    val home: StandingStats,
+
+    @SerializedName("away")
+    val away: StandingStats,
+
+    @SerializedName("update")
+    val update: String
+)
+
+/**
+ * Standing Statistics
+ */
+data class StandingStats(
+    @SerializedName("played")
+    val played: Int,
+
+    @SerializedName("win")
+    val win: Int,
+
+    @SerializedName("draw")
+    val draw: Int,
+
+    @SerializedName("lose")
+    val lose: Int,
+
+    @SerializedName("goals")
+    val goals: StandingGoals
+)
+
+/**
+ * Standing Goals
+ */
+data class StandingGoals(
+    @SerializedName("for")
+    val goalsFor: Int,
+
+    @SerializedName("against")
+    val against: Int
+)
+// ============================================================================
+// TOP SCORERS MODELS - Add these to your Models.kt file
+// ============================================================================
+
+/**
+ * Top Scorers Response
+ */
+data class TopScorersResponse(
+    @SerializedName("response")
+    val response: List<TopScorerEntry>
+)
+
+/**
+ * Top Scorer Entry
+ */
+data class TopScorerEntry(
+    @SerializedName("player")
+    val player: TopScorerPlayer,
+
+    @SerializedName("statistics")
+    val statistics: List<TopScorerStatistics>
+)
+
+/**
+ * Top Scorer Player
+ */
+data class TopScorerPlayer(
+    @SerializedName("id")
     val id: Int,
+
+    @SerializedName("name")
     val name: String,
-    val logo: String
+
+    @SerializedName("firstname")
+    val firstname: String? = null,
+
+    @SerializedName("lastname")
+    val lastname: String? = null,
+
+    @SerializedName("age")
+    val age: Int? = null,
+
+    @SerializedName("birth")
+    val birth: PlayerBirth? = null,
+
+    @SerializedName("nationality")
+    val nationality: String? = null,
+
+    @SerializedName("height")
+    val height: String? = null,
+
+    @SerializedName("weight")
+    val weight: String? = null,
+
+    @SerializedName("injured")
+    val injured: Boolean? = null,
+
+    @SerializedName("photo")
+    val photo: String
 )
 
-data class TeamFixturesStats(
-    val played: TeamPlayedStats,
-    val wins: TeamPlayedStats,
-    val draws: TeamPlayedStats,
-    val loses: TeamPlayedStats
+/**
+ * Player Birth Info
+ */
+data class PlayerBirth(
+    @SerializedName("date")
+    val date: String? = null,
+
+    @SerializedName("place")
+    val place: String? = null,
+
+    @SerializedName("country")
+    val country: String? = null
 )
 
-data class TeamPlayedStats(
-    val home: Int?,
-    val away: Int?,
-    val total: Int?
+/**
+ * Top Scorer Statistics
+ */
+data class TopScorerStatistics(
+    @SerializedName("team")
+    val team: Team,
+
+    @SerializedName("league")
+    val league: League,
+
+    @SerializedName("games")
+    val games: TopScorerGames,
+
+    @SerializedName("goals")
+    val goals: TopScorerGoals,
+
+    @SerializedName("assists")
+    val assists: TopScorerAssists? = null,
+
+    @SerializedName("rating")
+    val rating: String? = null
 )
 
-data class TeamGoalsStats(
-    val `for`: TeamGoalsForAgainst,
-    val against: TeamGoalsForAgainst
+/**
+ * Top Scorer Games
+ */
+data class TopScorerGames(
+    @SerializedName("appearences")
+    val appearances: Int? = null,
+
+    @SerializedName("lineups")
+    val lineups: Int? = null,
+
+    @SerializedName("minutes")
+    val minutes: Int? = null,
+
+    @SerializedName("number")
+    val number: Int? = null,
+
+    @SerializedName("position")
+    val position: String? = null,
+
+    @SerializedName("rating")
+    val rating: String? = null,
+
+    @SerializedName("captain")
+    val captain: Boolean? = null
 )
 
-data class TeamGoalsForAgainst(
-    val total: TeamGoalsTotal,
-    val average: TeamGoalsAverage,
-    val minute: Map<String, TeamGoalsMinute>?
+/**
+ * Top Scorer Goals
+ */
+data class TopScorerGoals(
+    @SerializedName("total")
+    val total: Int? = null,
+
+    @SerializedName("conceded")
+    val conceded: Int? = null,
+
+    @SerializedName("assists")
+    val assists: Int? = null,
+
+    @SerializedName("saves")
+    val saves: Int? = null
 )
 
-data class TeamGoalsTotal(
-    val home: Int?,
-    val away: Int?,
-    val total: Int?
-)
-
-data class TeamGoalsAverage(
-    val home: String?,
-    val away: String?,
-    val total: String?
-)
-
-data class TeamGoalsMinute(
-    val total: Int?,
-    val percentage: String?
-)
-
-data class TeamBiggestStats(
-    val streak: TeamStreakStats,
-    val wins: TeamWinsLosesStats,
-    val loses: TeamWinsLosesStats,
-    val goals: TeamBiggestGoalsStats
-)
-
-data class TeamStreakStats(
-    val wins: Int?,
-    val draws: Int?,
-    val loses: Int?
-)
-
-data class TeamWinsLosesStats(
-    val home: String?,
-    val away: String?
-)
-
-data class TeamBiggestGoalsStats(
-    val `for`: TeamBiggestGoalsForAgainst,
-    val against: TeamBiggestGoalsForAgainst
-)
-
-data class TeamBiggestGoalsForAgainst(
-    val home: Int?,
-    val away: Int?
-)
-
-data class TeamCleanSheetStats(
-    val home: Int?,
-    val away: Int?,
-    val total: Int?
-)
-
-data class TeamFailedToScoreStats(
-    val home: Int?,
-    val away: Int?,
-    val total: Int?
-)
-
-data class TeamPenaltyStats(
-    val scored: TeamPenaltyScored?,
-    val missed: TeamPenaltyMissed?
-)
-
-data class TeamPenaltyScored(
-    val total: Int?,
-    val percentage: String?
-)
-
-data class TeamPenaltyMissed(
-    val total: Int?,
-    val percentage: String?
-)
-
-data class TeamLineupStats(
-    val formation: String,
-    val played: Int
-)
-
-data class TeamCardsStats(
-    val yellow: Map<String, TeamCardMinute>?,
-    val red: Map<String, TeamCardMinute>?
-)
-
-data class TeamCardMinute(
-    val total: Int?,
-    val percentage: String?
+/**
+ * Top Scorer Assists (alternative structure)
+ */
+data class TopScorerAssists(
+    @SerializedName("total")
+    val total: Int? = null
 )

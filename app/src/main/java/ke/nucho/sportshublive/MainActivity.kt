@@ -9,16 +9,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import ke.nucho.sportshublive.ui.livescores.LiveScoresScreen
+import ke.nucho.sportshublive.ui.leaguedetail.LeagueDetailScreen
+import ke.nucho.sportshublive.ui.main.MainScreen
 import ke.nucho.sportshublive.ui.matchdetail.MatchDetailScreen
 import ke.nucho.sportshublive.ui.theme.SportsHubLiveTheme
 
+/**
+ * Main Activity - Football Live Scores App
+ *
+ * Navigation:
+ * - Main Screen (with bottom navigation: Predictions, Matches, Leagues, Favorites)
+ * - League Detail Screen (Fixtures, Table, Top Scorers)
+ * - Match Detail Screen
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +37,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SportsHubNavigation()
+                    FootballNavigation()
                 }
             }
         }
@@ -37,36 +45,33 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun SportsHubNavigation() {
+fun FootballNavigation() {
     val navController = rememberNavController()
 
     NavHost(
         navController = navController,
-        startDestination = "live_scores"
+        startDestination = "main"
     ) {
-        // Live Scores Screen
-        composable("live_scores") {
-            LiveScoresScreen(
-                onMatchClick = { fixtureId, sport ->
-                    navController.navigate("match_detail/$fixtureId/$sport")
+        // Main Screen with Bottom Navigation
+        // Contains: Predictions, Matches (Live Scores), Leagues, Favorites
+        composable("main") {
+            MainScreen(
+                onMatchClick = { fixtureId ->
+                    navController.navigate("match_detail/$fixtureId")
                 }
             )
         }
 
         // Match Detail Screen
         composable(
-            route = "match_detail/{fixtureId}/{sport}",
+            route = "match_detail/{fixtureId}",
             arguments = listOf(
-                navArgument("fixtureId") { type = NavType.IntType },
-                navArgument("sport") { type = NavType.StringType }
+                navArgument("fixtureId") { type = NavType.IntType }
             )
         ) { backStackEntry ->
             val fixtureId = backStackEntry.arguments?.getInt("fixtureId") ?: 0
-            val sport = backStackEntry.arguments?.getString("sport") ?: "Football"
 
             MatchDetailScreen(
-                fixtureId = fixtureId,
-                sport = sport,
                 onBackClick = {
                     navController.navigateUp()
                 }

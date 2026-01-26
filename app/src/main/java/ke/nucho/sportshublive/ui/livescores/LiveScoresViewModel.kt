@@ -218,7 +218,8 @@ class LiveScoresViewModel : ViewModel() {
             val startTime = System.currentTimeMillis()
 
             try {
-                val result = repository!!.getLiveMatches(_selectedLeague.value)
+                Log.d(TAG, "🔴 HYBRID: Using API-Sports for live matches")
+                val result = repository!!.getLiveMatchesHybrid(_selectedLeague.value)
                 val responseTime = System.currentTimeMillis() - startTime
 
                 result.onSuccess { fixtures ->
@@ -257,67 +258,85 @@ class LiveScoresViewModel : ViewModel() {
         _selectedDate.value = date
 
         currentLoadingJob = viewModelScope.launch {
-            // Check if repository is initialized
             if (repository == null) {
                 Log.w(TAG, "⚠️ Repository not initialized, attempting to initialize...")
-
                 if (!initializationAttempted) {
                     initializeRepository()
                 } else {
                     _uiState.value = LiveScoresUiState.Error(
-                        "⚠️ Repository Not Ready\n\n" +
-                                "The app is still initializing or failed to initialize.\n\n" +
-                                "Please:\n" +
-                                "• Wait a moment and try again\n" +
-                                "• Check your internet connection\n" +
-                                "• Restart the app if the issue persists\n\n" +
-                                "Tap 'Try Again' to retry initialization"
+                        "⚠️ Repository Not Ready\n\nPlease wait and try again."
                     )
                 }
                 return@launch
             }
 
             _uiState.value = LiveScoresUiState.Loading
-
             FirebaseAnalyticsHelper.logDateSelected(date)
-            Log.d(TAG, "📅 Loading matches for $date (League: ${_selectedLeague.value})")
 
-            val trace = FirebasePerformance.getInstance()
-                .newTrace("load_date_football")
+            val trace = FirebasePerformance.getInstance().newTrace("load_date_football")
             trace.start()
             trace.putAttribute("date", date)
-
             val startTime = System.currentTimeMillis()
 
             try {
-                val result = repository!!.getMatchesByDate(date, _selectedLeague.value)
+                val currentDate = getCurrentDate()
+                val isToday = date == currentDate
+                val selectedYear = date.substring(0, 4).toInt()
+
+                // CORRECTED HYBRID STRATEGY FOR CURRENT SEASON:
+                // - API-Sports: ONLY for LIVE matches (real-time updates)
+                // - Football-Data: For ALL date-based queries (past, today, upcoming)
+                //   This avoids API-Sports free tier season limitations
+
+                val dateType = when {
+                    date < currentDate -> "PAST"
+                    date > currentDate -> "FUTURE"
+                    else -> "TODAY"
+                }
+
+                Log.d(TAG, "🔵 Loading $dateType matches ($date, Year: $selectedYear) using Football-Data.org")
+
+                // Map API-Sports league ID to Football-Data league ID if needed
+                val mappedLeagueId = _selectedLeague.value?.let { mapLeagueId(it) }
+
+                val result = repository!!.getMatchesByDateFootballData(date, mappedLeagueId)
+                val provider = "Football-Data.org"
                 val responseTime = System.currentTimeMillis() - startTime
 
                 result.onSuccess { fixtures ->
-                    Log.d(TAG, "✅ Loaded ${fixtures.size} matches for $date in ${responseTime}ms")
-
-                    updateUiState(
-                        fixtures = fixtures,
-                        emptyMessage = getEmptyMessage(isLive = false, date = date)
-                    )
+                    Log.d(TAG, "✅ Loaded ${fixtures.size} matches for $date in ${responseTime}ms ($provider)")
+                    updateUiState(fixtures, getEmptyMessage(isLive = false, date = date))
 
                     trace.putMetric("response_time_ms", responseTime)
                     trace.putAttribute("status", "success")
-                    trace.putAttribute("provider", _apiProvider.value)
-
+                    trace.putAttribute("provider", provider)
+                    trace.putAttribute("year", selectedYear.toString())
+                    trace.putAttribute("is_today", isToday.toString())
                 }.onFailure { e ->
-                    Log.e(TAG, "❌ Error loading matches for $date: ${e.message}", e)
+                    Log.e(TAG, "❌ Error loading matches for $date using $provider: ${e.message}", e)
                     handleError(e, trace, responseTime)
                 }
-
             } catch (e: Exception) {
                 val responseTime = System.currentTimeMillis() - startTime
                 Log.e(TAG, "❌ Exception loading matches for $date: ${e.message}", e)
-                e.printStackTrace()
                 handleError(e, trace, responseTime)
             } finally {
                 trace.stop()
             }
+        }
+    }
+
+    // Helper function to map API-Sports league IDs to Football-Data league IDs
+    private fun mapLeagueId(apiSportsId: Int): Int {
+        return when (apiSportsId) {
+            39 -> 2021    // Premier League
+            140 -> 2014   // La Liga
+            78 -> 2002    // Bundesliga
+            135 -> 2019   // Serie A
+            61 -> 2015    // Ligue 1
+            2 -> 2001     // Champions League
+            3 -> 2018     // Europa League
+            else -> apiSportsId
         }
     }
 
@@ -366,12 +385,26 @@ class LiveScoresViewModel : ViewModel() {
         }
     }
 
+
+
+    // STEP 2: Find this function in LiveScoresViewModel.kt and REPLACE it completely
     private fun handleError(
         e: Throwable,
         trace: com.google.firebase.perf.metrics.Trace,
         responseTime: Long
     ) {
         val errorMessage = when {
+            // API-Sports season limitation - NEW ERROR HANDLING
+            e.message?.contains("Free plans do not have access to this season") == true -> {
+                "🔒 API-Sports Free Plan Limitation\n\n" +
+                        "The free plan only supports seasons 2022-2024.\n" +
+                        "Current season (2025/2026) requires a paid plan.\n\n" +
+                        "The app will automatically use Football-Data.org for current season data.\n\n" +
+                        "Try:\n" +
+                        "• Selecting a date from 2022-2024 for API-Sports data\n" +
+                        "• Using Live view for current matches\n" +
+                        "• Upgrading your API-Sports plan for 2025+ data"
+            }
             e.message?.contains("403") == true || e.message?.contains("Forbidden") == true -> {
                 "🔒 Authentication Error\n\n" +
                         "Your API key is invalid or expired.\n\n" +
@@ -389,11 +422,13 @@ class LiveScoresViewModel : ViewModel() {
             }
             e.message?.contains("404") == true -> {
                 "❓ Data Not Found\n\n" +
-                        "The requested data is not available.\n\n" +
+                        "${_apiProvider.value} doesn't have data for the 2025/2026 season yet.\n\n" +
+                        "Current season data may not be available on free plans.\n\n" +
                         "Try:\n" +
-                        "• Select a different league\n" +
-                        "• Use Live view\n" +
-                        "• Choose a different date"
+                        "• Use 'Live' view for current matches\n" +
+                        "• Select dates from 2022-2024 seasons\n" +
+                        "• Check back later for 2025+ season data\n" +
+                        "• Consider upgrading to a paid plan"
             }
             e.message?.contains("timeout") == true || e.message?.contains("SocketTimeout") == true -> {
                 "⏳ Request Timeout\n\n" +

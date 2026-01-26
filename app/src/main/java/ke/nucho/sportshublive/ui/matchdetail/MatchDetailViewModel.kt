@@ -18,13 +18,12 @@ import kotlinx.coroutines.Job
 
 /**
  * Professional Match Detail ViewModel
- * Handles comprehensive match information including:
+ * Uses API-Sports for comprehensive match information including:
  * - Live match updates
  * - Match statistics
  * - Events (goals, cards, substitutions)
  * - Team lineups
  * - Head-to-head history
- * - Match predictions
  */
 class MatchDetailViewModel(
     savedStateHandle: SavedStateHandle
@@ -82,37 +81,36 @@ class MatchDetailViewModel(
             _uiState.value = MatchDetailUiState.Loading
 
             try {
+                Log.d(TAG, "🔄 Fetching Firebase Remote Config...")
                 val success = apiConfigManager.fetchAndActivate()
 
                 if (success) {
-                    val configResult = apiConfigManager.getApiConfig()
-
-                    configResult.onSuccess { config ->
-                        Log.d(TAG, "✅ Using ${config.provider} API")
-                        repository = UnifiedFootballRepository(apiConfigManager)
-                        loadMatchDetails()
-                    }.onFailure { e ->
-                        Log.e(TAG, "❌ Failed to get API config", e)
-                        _uiState.value = MatchDetailUiState.Error(
-                            "Configuration Error: ${e.message}"
-                        )
-                    }
+                    Log.d(TAG, "✅ Remote Config activated")
                 } else {
-                    _uiState.value = MatchDetailUiState.Error(
-                        "Unable to load configuration"
-                    )
+                    Log.w(TAG, "⚠️ Using default Remote Config values")
                 }
+
+                // Initialize repository
+                repository = UnifiedFootballRepository(apiConfigManager)
+                Log.d(TAG, "✅ Repository initialized")
+
+                // Load match details
+                loadMatchDetails()
+
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Initialization error", e)
                 _uiState.value = MatchDetailUiState.Error(
-                    "Initialization failed: ${e.message}"
+                    "Failed to initialize: ${e.message}\n\nPlease check:\n" +
+                            "• Firebase Remote Config is set up\n" +
+                            "• API-Sports key is configured\n" +
+                            "• Internet connection"
                 )
             }
         }
     }
 
     /**
-     * Load complete match details
+     * Load complete match details using API-Sports
      */
     fun loadMatchDetails() {
         viewModelScope.launch {
@@ -128,30 +126,40 @@ class MatchDetailViewModel(
                 .newTrace("load_match_detail")
             trace.start()
             trace.putAttribute("fixture_id", fixtureId.toString())
+            trace.putAttribute("provider", "API-Sports")
 
             try {
-                // Load fixture details
-                val fixtureResult = repo.getFixtureById(fixtureId)
+                Log.d(TAG, "🔴 Loading match details from API-Sports")
+                Log.d(TAG, "   Fixture ID: $fixtureId")
+
+                // Use API-Sports for match details
+                val fixtureResult = repo.getFixtureByIdHybrid(fixtureId)
 
                 fixtureResult.onSuccess { fixtures ->
                     if (fixtures.isNotEmpty()) {
                         val fixture = fixtures.first()
                         _fixture.value = fixture
 
+                        Log.d(TAG, "✅ Fixture loaded successfully")
+                        Log.d(TAG, "   Match: ${fixture.teams.home.name} vs ${fixture.teams.away.name}")
+                        Log.d(TAG, "   Status: ${fixture.fixture.status.long}")
+                        Log.d(TAG, "   League: ${fixture.league.name}")
+
+                        // Log match viewed
                         FirebaseAnalyticsHelper.logMatchViewed(
                             fixtureId,
                             fixture.league.name,
                             "${fixture.teams.home.name} vs ${fixture.teams.away.name}"
                         )
 
-                        // Determine if match is live
                         val isLive = isMatchLive(fixture.fixture.status.short)
+                        Log.d(TAG, "   Is Live: $isLive")
 
                         if (isLive) {
                             startAutoRefresh()
                         }
 
-                        // Load additional data based on match status
+                        // Load additional data
                         loadAdditionalData(fixture)
 
                         _uiState.value = MatchDetailUiState.Success
@@ -159,17 +167,26 @@ class MatchDetailViewModel(
                         trace.putAttribute("status", "success")
                         trace.putAttribute("is_live", isLive.toString())
                     } else {
-                        _uiState.value = MatchDetailUiState.Error("Match not found")
+                        Log.w(TAG, "⚠️ No fixture found for ID: $fixtureId")
+                        _uiState.value = MatchDetailUiState.Error(
+                            "Match not found\n\n" +
+                                    "Fixture ID: $fixtureId\n\n" +
+                                    "This match may have been:\n" +
+                                    "• Postponed or cancelled\n" +
+                                    "• Not yet scheduled\n" +
+                                    "• Removed from the database"
+                        )
                         trace.putAttribute("status", "not_found")
                     }
                 }.onFailure { e ->
-                    Log.e(TAG, "❌ Error loading fixture", e)
+                    Log.e(TAG, "❌ Error loading fixture from API-Sports", e)
                     handleError(e)
                     trace.putAttribute("status", "error")
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Exception loading match", e)
+                e.printStackTrace()
                 handleError(e)
                 trace.putAttribute("status", "exception")
             } finally {
@@ -180,76 +197,109 @@ class MatchDetailViewModel(
 
     /**
      * Load additional match data (statistics, events, lineups, h2h)
+     * All using API-Sports
      */
     private suspend fun loadAdditionalData(fixture: Fixture) {
         val repo = repository ?: return
 
-        // Load match statistics
+        Log.d(TAG, "🔄 Loading additional match data...")
+
+        // Load statistics
         viewModelScope.launch {
             try {
-                val statsResult = repo.getMatchStatistics(fixtureId)
+                Log.d(TAG, "   📊 Loading statistics...")
+                val statsResult = repo.getMatchStatisticsHybrid(fixtureId)
                 statsResult.onSuccess { stats ->
                     _statistics.value = stats
-                    Log.d(TAG, "✅ Loaded statistics")
+                    Log.d(TAG, "   ✅ Loaded ${stats.size} team statistics")
+                }.onFailure { e ->
+                    Log.w(TAG, "   ⚠️ Could not load statistics: ${e.message}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "⚠️ Could not load statistics: ${e.message}")
+                Log.w(TAG, "   ⚠️ Statistics error: ${e.message}")
             }
         }
 
-        // Load match events
+        // Load events
         viewModelScope.launch {
             try {
-                val eventsResult = repo.getMatchEvents(fixtureId)
+                Log.d(TAG, "   📋 Loading events...")
+                val eventsResult = repo.getMatchEventsHybrid(fixtureId)
                 eventsResult.onSuccess { events ->
                     _events.value = events.sortedBy { it.time.elapsed }
-                    Log.d(TAG, "✅ Loaded ${events.size} events")
+                    Log.d(TAG, "   ✅ Loaded ${events.size} match events")
+
+                    // Log event types
+                    val eventTypes = events.groupBy { it.type }
+                    eventTypes.forEach { (type, list) ->
+                        Log.d(TAG, "      • $type: ${list.size}")
+                    }
+                }.onFailure { e ->
+                    Log.w(TAG, "   ⚠️ Could not load events: ${e.message}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "⚠️ Could not load events: ${e.message}")
+                Log.w(TAG, "   ⚠️ Events error: ${e.message}")
             }
         }
 
-        // Load lineups (only for started matches)
-        if (fixture.fixture.status.short !in listOf("NS", "PST", "CANC")) {
+        // Load lineups (only if match has started or finished)
+        if (fixture.fixture.status.short !in listOf("NS", "PST", "CANC", "ABD")) {
             viewModelScope.launch {
                 try {
-                    val lineupsResult = repo.getMatchLineups(fixtureId)
+                    Log.d(TAG, "   👥 Loading lineups...")
+                    val lineupsResult = repo.getMatchLineupsHybrid(fixtureId)
                     lineupsResult.onSuccess { lineups ->
                         _lineups.value = lineups
-                        Log.d(TAG, "✅ Loaded lineups")
+                        Log.d(TAG, "   ✅ Loaded ${lineups.size} team lineups")
+                        lineups.forEach { lineup ->
+                            Log.d(TAG, "      • ${lineup.team.name}: ${lineup.formation}")
+                        }
+                    }.onFailure { e ->
+                        Log.w(TAG, "   ⚠️ Could not load lineups: ${e.message}")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "⚠️ Could not load lineups: ${e.message}")
+                    Log.w(TAG, "   ⚠️ Lineups error: ${e.message}")
                 }
             }
+        } else {
+            Log.d(TAG, "   ⏭️ Skipping lineups (match not started)")
         }
 
         // Load head-to-head
         viewModelScope.launch {
             try {
-                val h2hResult = repo.getHeadToHead(
+                Log.d(TAG, "   🔄 Loading H2H...")
+                val h2hResult = repo.getHeadToHeadHybrid(
                     team1Id = fixture.teams.home.id,
                     team2Id = fixture.teams.away.id
                 )
                 h2hResult.onSuccess { matches ->
-                    _h2h.value = matches.take(5) // Last 5 matches
-                    Log.d(TAG, "✅ Loaded ${matches.size} H2H matches")
+                    _h2h.value = matches.take(5)
+                    Log.d(TAG, "   ✅ Loaded ${matches.size} H2H matches (showing 5)")
+                }.onFailure { e ->
+                    Log.w(TAG, "   ⚠️ Could not load H2H: ${e.message}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "⚠️ Could not load H2H: ${e.message}")
+                Log.w(TAG, "   ⚠️ H2H error: ${e.message}")
             }
         }
+
+        Log.d(TAG, "✅ Additional data loading initiated")
     }
 
     /**
      * Start auto-refresh for live matches
      */
     private fun startAutoRefresh() {
-        if (_isAutoRefresh.value) return
+        if (_isAutoRefresh.value) {
+            Log.d(TAG, "⏭️ Auto-refresh already running")
+            return
+        }
 
         _isAutoRefresh.value = true
         autoRefreshJob?.cancel()
+
+        Log.d(TAG, "🔄 Starting auto-refresh (every ${AUTO_REFRESH_INTERVAL / 1000}s)")
 
         autoRefreshJob = viewModelScope.launch {
             while (_isAutoRefresh.value) {
@@ -257,10 +307,10 @@ class MatchDetailViewModel(
 
                 val currentFixture = _fixture.value
                 if (currentFixture != null && isMatchLive(currentFixture.fixture.status.short)) {
-                    Log.d(TAG, "🔄 Auto-refreshing live match")
+                    Log.d(TAG, "🔄 Auto-refreshing live match...")
                     refreshMatchData()
                 } else {
-                    // Stop auto-refresh if match is no longer live
+                    Log.d(TAG, "⏹️ Match no longer live, stopping auto-refresh")
                     stopAutoRefresh()
                 }
             }
@@ -271,40 +321,65 @@ class MatchDetailViewModel(
      * Stop auto-refresh
      */
     private fun stopAutoRefresh() {
+        Log.d(TAG, "⏹️ Stopping auto-refresh")
         _isAutoRefresh.value = false
         autoRefreshJob?.cancel()
         autoRefreshJob = null
     }
 
     /**
-     * Refresh match data
+     * Refresh match data (for live matches)
      */
     private suspend fun refreshMatchData() {
         val repo = repository ?: return
 
         try {
+            Log.d(TAG, "🔄 Refreshing match data...")
+
             // Refresh fixture
-            val fixtureResult = repo.getFixtureById(fixtureId)
+            val fixtureResult = repo.getFixtureByIdHybrid(fixtureId)
             fixtureResult.onSuccess { fixtures ->
                 if (fixtures.isNotEmpty()) {
-                    _fixture.value = fixtures.first()
+                    val newFixture = fixtures.first()
+                    val oldFixture = _fixture.value
+
+                    _fixture.value = newFixture
+
+                    // Log changes
+                    if (oldFixture != null) {
+                        if (oldFixture.goals.home != newFixture.goals.home ||
+                            oldFixture.goals.away != newFixture.goals.away) {
+                            Log.d(TAG, "   ⚽ Score updated: ${newFixture.goals.home} - ${newFixture.goals.away}")
+                        }
+                        if (oldFixture.fixture.status.elapsed != newFixture.fixture.status.elapsed) {
+                            Log.d(TAG, "   ⏱️ Time: ${newFixture.fixture.status.elapsed}'")
+                        }
+                    }
                 }
             }
 
             // Refresh events
-            val eventsResult = repo.getMatchEvents(fixtureId)
+            val eventsResult = repo.getMatchEventsHybrid(fixtureId)
             eventsResult.onSuccess { events ->
-                _events.value = events.sortedBy { it.time.elapsed }
+                val oldCount = _events.value.size
+                val newEvents = events.sortedBy { it.time.elapsed }
+                _events.value = newEvents
+
+                if (newEvents.size > oldCount) {
+                    Log.d(TAG, "   📋 New events: ${newEvents.size - oldCount}")
+                }
             }
 
             // Refresh statistics
-            val statsResult = repo.getMatchStatistics(fixtureId)
+            val statsResult = repo.getMatchStatisticsHybrid(fixtureId)
             statsResult.onSuccess { stats ->
                 _statistics.value = stats
             }
 
+            Log.d(TAG, "   ✅ Refresh complete")
+
         } catch (e: Exception) {
-            Log.e(TAG, "⚠️ Refresh error: ${e.message}")
+            Log.e(TAG, "   ⚠️ Refresh error: ${e.message}")
         }
     }
 
@@ -312,7 +387,7 @@ class MatchDetailViewModel(
      * Manual refresh
      */
     fun refresh() {
-        Log.d(TAG, "🔄 Manual refresh")
+        Log.d(TAG, "🔄 Manual refresh triggered")
         FirebaseAnalyticsHelper.logMatchRefreshed("MatchDetail")
         loadMatchDetails()
     }
@@ -323,6 +398,7 @@ class MatchDetailViewModel(
     fun selectTab(tab: MatchDetailTab) {
         _selectedTab.value = tab
         FirebaseAnalyticsHelper.logTabSelected(tab.name)
+        Log.d(TAG, "📑 Tab selected: ${tab.name}")
     }
 
     /**
@@ -333,21 +409,57 @@ class MatchDetailViewModel(
     }
 
     /**
-     * Handle errors
+     * Handle errors with detailed messages
      */
     private fun handleError(e: Throwable) {
         val errorMessage = when {
-            e.message?.contains("404") == true ->
-                "Match not found. It may have been postponed or cancelled."
+            e.message?.contains("404") == true || e.message?.contains("not found") == true ->
+                "⚠️ Match Not Found\n\n" +
+                        "Fixture ID: $fixtureId\n\n" +
+                        "This match may have been:\n" +
+                        "• Postponed or cancelled\n" +
+                        "• Not yet scheduled\n" +
+                        "• Removed from the database\n\n" +
+                        "Please try:\n" +
+                        "• Going back and selecting the match again\n" +
+                        "• Checking if the match date is correct"
+
             e.message?.contains("403") == true ->
-                "Authentication error. Please check your API configuration."
+                "🔒 Access Denied\n\n" +
+                        "Your API-Sports key is invalid or expired.\n\n" +
+                        "Please:\n" +
+                        "1. Go to Firebase Console\n" +
+                        "2. Update your API-Sports key in Remote Config\n" +
+                        "3. Restart the app"
+
             e.message?.contains("429") == true ->
-                "Rate limit reached. Please wait a moment."
+                "⏱️ Rate Limit Exceeded\n\n" +
+                        "API-Sports rate limit reached.\n\n" +
+                        "Free tier limits:\n" +
+                        "• 100 requests per day\n" +
+                        "• 10 requests per minute\n\n" +
+                        "Please wait a few minutes and try again."
+
+            e.message?.contains("timeout") == true || e.message?.contains("Unable to resolve host") == true ->
+                "🌐 Connection Error\n\n" +
+                        "Unable to connect to API-Sports.\n\n" +
+                        "Please check:\n" +
+                        "• Your internet connection\n" +
+                        "• WiFi or mobile data is enabled\n" +
+                        "• Try again in a moment"
+
             else ->
-                "Unable to load match details: ${e.message}"
+                "❌ Unable to Load Match\n\n" +
+                        "Error: ${e.message}\n\n" +
+                        "Fixture ID: $fixtureId\n\n" +
+                        "Please try:\n" +
+                        "• Pulling down to refresh\n" +
+                        "• Going back and selecting the match again\n" +
+                        "• Checking your internet connection"
         }
 
         _uiState.value = MatchDetailUiState.Error(errorMessage)
+        Log.e(TAG, "❌ Error handled: $errorMessage")
     }
 
     /**

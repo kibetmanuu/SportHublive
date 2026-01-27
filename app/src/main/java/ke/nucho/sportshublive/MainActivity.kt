@@ -19,18 +19,15 @@ import ke.nucho.sportshublive.ui.main.MainScreen
 import ke.nucho.sportshublive.ui.matchdetail.MatchDetailScreen
 import ke.nucho.sportshublive.ui.theme.SportsHubLiveTheme
 
-/**
- * Main Activity - Football Live Scores App
- *
- * Navigation:
- * - Main Screen (with bottom navigation: Predictions, Matches, Leagues, Favorites)
- * - League Detail Screen (Fixtures, Table, Top Scorers)
- * - Match Detail Screen
- */
+
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Enable edge-to-edge display
         enableEdgeToEdge()
+
         setContent {
             SportsHubLiveTheme {
                 Surface(
@@ -79,3 +76,4 @@ fun FootballNavigation() {
         }
     }
 }
+

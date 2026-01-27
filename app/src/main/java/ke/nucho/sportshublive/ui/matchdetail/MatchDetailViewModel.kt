@@ -5,9 +5,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.perf.FirebasePerformance
-import ke.nucho.sportshublive.data.api.ApiConfigManager
+import ke.nucho.sportshublive.SportsHubApplication
 import ke.nucho.sportshublive.data.models.*
-import ke.nucho.sportshublive.data.repository.UnifiedFootballRepository
 import ke.nucho.sportshublive.utils.FirebaseAnalyticsHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,13 +16,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 
 /**
- * Professional Match Detail ViewModel
- * Uses API-Sports for comprehensive match information including:
+ * Professional Match Detail ViewModel with Caching
+ * Uses CachedFootballRepository for improved performance:
  * - Live match updates
  * - Match statistics
  * - Events (goals, cards, substitutions)
  * - Team lineups
  * - Head-to-head history
+ *
+ * ✅ CACHED: All data is cached with smart refresh strategy
  */
 class MatchDetailViewModel(
     savedStateHandle: SavedStateHandle
@@ -31,8 +32,8 @@ class MatchDetailViewModel(
 
     private val fixtureId: Int = checkNotNull(savedStateHandle["fixtureId"])
 
-    private val apiConfigManager = ApiConfigManager()
-    private var repository: UnifiedFootballRepository? = null
+    // ✅ USE CACHED REPOSITORY FROM APPLICATION
+    private val repository = SportsHubApplication.cachedRepository
     private var autoRefreshJob: Job? = null
 
     // UI States
@@ -68,82 +69,49 @@ class MatchDetailViewModel(
     }
 
     init {
-        Log.d(TAG, "⚽ Match Detail initialized for fixture: $fixtureId")
+        Log.d(TAG, "⚽ Match Detail initialized for fixture: $fixtureId (WITH CACHE)")
         FirebaseAnalyticsHelper.logScreenView("MatchDetail")
-        initializeRepository()
+        loadMatchDetails(forceRefresh = false)
     }
 
     /**
-     * Initialize repository and load match data
+     * ✅ CACHED: Load complete match details
+     * @param forceRefresh If true, bypasses cache and fetches fresh data
      */
-    private fun initializeRepository() {
+    fun loadMatchDetails(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _uiState.value = MatchDetailUiState.Loading
-
-            try {
-                Log.d(TAG, "🔄 Fetching Firebase Remote Config...")
-                val success = apiConfigManager.fetchAndActivate()
-
-                if (success) {
-                    Log.d(TAG, "✅ Remote Config activated")
-                } else {
-                    Log.w(TAG, "⚠️ Using default Remote Config values")
-                }
-
-                // Initialize repository
-                repository = UnifiedFootballRepository(apiConfigManager)
-                Log.d(TAG, "✅ Repository initialized")
-
-                // Load match details
-                loadMatchDetails()
-
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Initialization error", e)
-                _uiState.value = MatchDetailUiState.Error(
-                    "Failed to initialize: ${e.message}\n\nPlease check:\n" +
-                            "• Firebase Remote Config is set up\n" +
-                            "• API-Sports key is configured\n" +
-                            "• Internet connection"
-                )
-            }
-        }
-    }
-
-    /**
-     * Load complete match details using API-Sports
-     */
-    fun loadMatchDetails() {
-        viewModelScope.launch {
-            _uiState.value = MatchDetailUiState.Loading
-
-            val repo = repository
-            if (repo == null) {
-                _uiState.value = MatchDetailUiState.Error("Repository not initialized")
-                return@launch
-            }
 
             val trace = FirebasePerformance.getInstance()
                 .newTrace("load_match_detail")
             trace.start()
             trace.putAttribute("fixture_id", fixtureId.toString())
-            trace.putAttribute("provider", "API-Sports")
+            trace.putAttribute("provider", "API-Sports (Cached)")
+            trace.putAttribute("force_refresh", forceRefresh.toString())
 
             try {
-                Log.d(TAG, "🔴 Loading match details from API-Sports")
+                val startTime = System.currentTimeMillis()
+                Log.d(TAG, "🔴 Loading match details from API-Sports (forceRefresh: $forceRefresh)")
                 Log.d(TAG, "   Fixture ID: $fixtureId")
 
-                // Use API-Sports for match details
-                val fixtureResult = repo.getFixtureByIdHybrid(fixtureId)
+                // ✅ USE CACHED METHOD - getFixtureById
+                val fixtureResult = repository.getFixtureById(
+                    fixtureId = fixtureId,
+                    forceRefresh = forceRefresh  // ✅ Cache-aware!
+                )
+
+                val responseTime = System.currentTimeMillis() - startTime
 
                 fixtureResult.onSuccess { fixtures ->
                     if (fixtures.isNotEmpty()) {
                         val fixture = fixtures.first()
                         _fixture.value = fixture
 
-                        Log.d(TAG, "✅ Fixture loaded successfully")
+                        Log.d(TAG, "✅ Fixture loaded successfully in ${responseTime}ms")
                         Log.d(TAG, "   Match: ${fixture.teams.home.name} vs ${fixture.teams.away.name}")
                         Log.d(TAG, "   Status: ${fixture.fixture.status.long}")
                         Log.d(TAG, "   League: ${fixture.league.name}")
+                        Log.d(TAG, "   📦 Cache: ${if (forceRefresh) "BYPASSED" else "USED"}")
 
                         // Log match viewed
                         FirebaseAnalyticsHelper.logMatchViewed(
@@ -159,13 +127,14 @@ class MatchDetailViewModel(
                             startAutoRefresh()
                         }
 
-                        // Load additional data
-                        loadAdditionalData(fixture)
+                        // Load additional data (with cache support)
+                        loadAdditionalData(fixture, forceRefresh)
 
                         _uiState.value = MatchDetailUiState.Success
 
                         trace.putAttribute("status", "success")
                         trace.putAttribute("is_live", isLive.toString())
+                        trace.putAttribute("response_time_ms", responseTime.toString())
                     } else {
                         Log.w(TAG, "⚠️ No fixture found for ID: $fixtureId")
                         _uiState.value = MatchDetailUiState.Error(
@@ -179,9 +148,10 @@ class MatchDetailViewModel(
                         trace.putAttribute("status", "not_found")
                     }
                 }.onFailure { e ->
-                    Log.e(TAG, "❌ Error loading fixture from API-Sports", e)
+                    Log.e(TAG, "❌ Error loading fixture from API-Sports (${responseTime}ms)", e)
                     handleError(e)
                     trace.putAttribute("status", "error")
+                    trace.putAttribute("response_time_ms", responseTime.toString())
                 }
 
             } catch (e: Exception) {
@@ -196,22 +166,31 @@ class MatchDetailViewModel(
     }
 
     /**
-     * Load additional match data (statistics, events, lineups, h2h)
-     * All using API-Sports
+     * ✅ CACHED: Load additional match data (statistics, events, lineups, h2h)
+     * All using cached repository methods
+     * @param forceRefresh If true, bypasses cache for all additional data
      */
-    private suspend fun loadAdditionalData(fixture: Fixture) {
-        val repo = repository ?: return
-
-        Log.d(TAG, "🔄 Loading additional match data...")
+    private suspend fun loadAdditionalData(fixture: Fixture, forceRefresh: Boolean = false) {
+        Log.d(TAG, "🔄 Loading additional match data (forceRefresh: $forceRefresh)...")
 
         // Load statistics
         viewModelScope.launch {
             try {
+                val startTime = System.currentTimeMillis()
                 Log.d(TAG, "   📊 Loading statistics...")
-                val statsResult = repo.getMatchStatisticsHybrid(fixtureId)
+
+                // ✅ USE CACHED METHOD - getMatchStatistics
+                val statsResult = repository.getMatchStatistics(
+                    fixtureId = fixtureId,
+                    forceRefresh = forceRefresh  // ✅ Cache-aware!
+                )
+
+                val responseTime = System.currentTimeMillis() - startTime
+
                 statsResult.onSuccess { stats ->
                     _statistics.value = stats
-                    Log.d(TAG, "   ✅ Loaded ${stats.size} team statistics")
+                    Log.d(TAG, "   ✅ Loaded ${stats.size} team statistics (${responseTime}ms)")
+                    Log.d(TAG, "      📦 Cache: ${if (forceRefresh) "BYPASSED" else "USED"}")
                 }.onFailure { e ->
                     Log.w(TAG, "   ⚠️ Could not load statistics: ${e.message}")
                 }
@@ -223,11 +202,21 @@ class MatchDetailViewModel(
         // Load events
         viewModelScope.launch {
             try {
+                val startTime = System.currentTimeMillis()
                 Log.d(TAG, "   📋 Loading events...")
-                val eventsResult = repo.getMatchEventsHybrid(fixtureId)
+
+                // ✅ USE CACHED METHOD - getMatchEvents
+                val eventsResult = repository.getMatchEvents(
+                    fixtureId = fixtureId,
+                    forceRefresh = forceRefresh  // ✅ Cache-aware!
+                )
+
+                val responseTime = System.currentTimeMillis() - startTime
+
                 eventsResult.onSuccess { events ->
                     _events.value = events.sortedBy { it.time.elapsed }
-                    Log.d(TAG, "   ✅ Loaded ${events.size} match events")
+                    Log.d(TAG, "   ✅ Loaded ${events.size} match events (${responseTime}ms)")
+                    Log.d(TAG, "      📦 Cache: ${if (forceRefresh) "BYPASSED" else "USED"}")
 
                     // Log event types
                     val eventTypes = events.groupBy { it.type }
@@ -246,11 +235,21 @@ class MatchDetailViewModel(
         if (fixture.fixture.status.short !in listOf("NS", "PST", "CANC", "ABD")) {
             viewModelScope.launch {
                 try {
+                    val startTime = System.currentTimeMillis()
                     Log.d(TAG, "   👥 Loading lineups...")
-                    val lineupsResult = repo.getMatchLineupsHybrid(fixtureId)
+
+                    // ✅ USE CACHED METHOD - getMatchLineups
+                    val lineupsResult = repository.getMatchLineups(
+                        fixtureId = fixtureId,
+                        forceRefresh = forceRefresh  // ✅ Cache-aware!
+                    )
+
+                    val responseTime = System.currentTimeMillis() - startTime
+
                     lineupsResult.onSuccess { lineups ->
                         _lineups.value = lineups
-                        Log.d(TAG, "   ✅ Loaded ${lineups.size} team lineups")
+                        Log.d(TAG, "   ✅ Loaded ${lineups.size} team lineups (${responseTime}ms)")
+                        Log.d(TAG, "      📦 Cache: ${if (forceRefresh) "BYPASSED" else "USED"}")
                         lineups.forEach { lineup ->
                             Log.d(TAG, "      • ${lineup.team.name}: ${lineup.formation}")
                         }
@@ -268,14 +267,22 @@ class MatchDetailViewModel(
         // Load head-to-head
         viewModelScope.launch {
             try {
+                val startTime = System.currentTimeMillis()
                 Log.d(TAG, "   🔄 Loading H2H...")
-                val h2hResult = repo.getHeadToHeadHybrid(
+
+                // ✅ USE CACHED METHOD - getHeadToHead
+                val h2hResult = repository.getHeadToHead(
                     team1Id = fixture.teams.home.id,
-                    team2Id = fixture.teams.away.id
+                    team2Id = fixture.teams.away.id,
+                    forceRefresh = forceRefresh  // ✅ Cache-aware!
                 )
+
+                val responseTime = System.currentTimeMillis() - startTime
+
                 h2hResult.onSuccess { matches ->
                     _h2h.value = matches.take(5)
-                    Log.d(TAG, "   ✅ Loaded ${matches.size} H2H matches (showing 5)")
+                    Log.d(TAG, "   ✅ Loaded ${matches.size} H2H matches (showing 5) (${responseTime}ms)")
+                    Log.d(TAG, "      📦 Cache: ${if (forceRefresh) "BYPASSED" else "USED"}")
                 }.onFailure { e ->
                     Log.w(TAG, "   ⚠️ Could not load H2H: ${e.message}")
                 }
@@ -288,7 +295,8 @@ class MatchDetailViewModel(
     }
 
     /**
-     * Start auto-refresh for live matches
+     * ✅ IMPROVED: Start auto-refresh for live matches
+     * Auto-refresh always forces fresh data (bypasses cache)
      */
     private fun startAutoRefresh() {
         if (_isAutoRefresh.value) {
@@ -300,6 +308,7 @@ class MatchDetailViewModel(
         autoRefreshJob?.cancel()
 
         Log.d(TAG, "🔄 Starting auto-refresh (every ${AUTO_REFRESH_INTERVAL / 1000}s)")
+        Log.d(TAG, "   📦 Auto-refresh will BYPASS cache for live data")
 
         autoRefreshJob = viewModelScope.launch {
             while (_isAutoRefresh.value) {
@@ -328,16 +337,19 @@ class MatchDetailViewModel(
     }
 
     /**
-     * Refresh match data (for live matches)
+     * ✅ IMPROVED: Refresh match data (for live matches)
+     * Always bypasses cache to get the freshest data
      */
     private suspend fun refreshMatchData() {
-        val repo = repository ?: return
-
         try {
-            Log.d(TAG, "🔄 Refreshing match data...")
+            Log.d(TAG, "🔄 Refreshing match data (bypassing cache)...")
 
-            // Refresh fixture
-            val fixtureResult = repo.getFixtureByIdHybrid(fixtureId)
+            // ✅ Refresh fixture (force refresh)
+            val fixtureResult = repository.getFixtureById(
+                fixtureId = fixtureId,
+                forceRefresh = true  // ✅ Always bypass cache for live updates
+            )
+
             fixtureResult.onSuccess { fixtures ->
                 if (fixtures.isNotEmpty()) {
                     val newFixture = fixtures.first()
@@ -358,8 +370,12 @@ class MatchDetailViewModel(
                 }
             }
 
-            // Refresh events
-            val eventsResult = repo.getMatchEventsHybrid(fixtureId)
+            // ✅ Refresh events (force refresh)
+            val eventsResult = repository.getMatchEvents(
+                fixtureId = fixtureId,
+                forceRefresh = true  // ✅ Always bypass cache for live updates
+            )
+
             eventsResult.onSuccess { events ->
                 val oldCount = _events.value.size
                 val newEvents = events.sortedBy { it.time.elapsed }
@@ -370,8 +386,12 @@ class MatchDetailViewModel(
                 }
             }
 
-            // Refresh statistics
-            val statsResult = repo.getMatchStatisticsHybrid(fixtureId)
+            // ✅ Refresh statistics (force refresh)
+            val statsResult = repository.getMatchStatistics(
+                fixtureId = fixtureId,
+                forceRefresh = true  // ✅ Always bypass cache for live updates
+            )
+
             statsResult.onSuccess { stats ->
                 _statistics.value = stats
             }
@@ -384,12 +404,13 @@ class MatchDetailViewModel(
     }
 
     /**
-     * Manual refresh
+     * ✅ IMPROVED: Manual refresh
+     * Forces fresh data from API (bypasses cache)
      */
     fun refresh() {
-        Log.d(TAG, "🔄 Manual refresh triggered")
+        Log.d(TAG, "🔄 Manual refresh triggered (force refresh = true)")
         FirebaseAnalyticsHelper.logMatchRefreshed("MatchDetail")
-        loadMatchDetails()
+        loadMatchDetails(forceRefresh = true)  // ✅ Bypass cache
     }
 
     /**
@@ -438,6 +459,7 @@ class MatchDetailViewModel(
                         "Free tier limits:\n" +
                         "• 100 requests per day\n" +
                         "• 10 requests per minute\n\n" +
+                        "💡 Tip: The app uses caching to reduce API calls!\n\n" +
                         "Please wait a few minutes and try again."
 
             e.message?.contains("timeout") == true || e.message?.contains("Unable to resolve host") == true ->

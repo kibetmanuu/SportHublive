@@ -7,6 +7,8 @@ import ke.nucho.sportshublive.SportsHubApplication
 /**
  * Firebase Analytics Helper for Football Live Scores
  * Provides type-safe analytics logging for football-specific events
+ *
+ * ✅ ENHANCED with better cache tracking for monitoring cache performance
  */
 object FirebaseAnalyticsHelper {
 
@@ -372,38 +374,142 @@ object FirebaseAnalyticsHelper {
     }
 
     // ==================== CACHE & PERFORMANCE ====================
+    // ✅ ENHANCED CACHE TRACKING
 
     /**
-     * Log cache hit
+     * Log cache hit with detailed info
+     * Call this when data is loaded from cache
      */
-    fun logCacheHit(dataType: String) {
+    fun logCacheHit(dataType: String, ageSeconds: Long = 0) {
         val bundle = Bundle().apply {
             putString("sport", "football")
             putString("data_type", dataType)
+            if (ageSeconds > 0) {
+                putLong("cache_age_seconds", ageSeconds)
+            }
         }
         analytics.logEvent("cache_hit", bundle)
     }
 
     /**
-     * Log cache miss
+     * Log cache miss with reason
+     * Call this when cache is not available
      */
-    fun logCacheMiss(dataType: String) {
+    fun logCacheMiss(dataType: String, reason: String = "expired_or_missing") {
         val bundle = Bundle().apply {
             putString("sport", "football")
             putString("data_type", dataType)
+            putString("reason", reason) // "expired", "missing", "force_refresh"
         }
         analytics.logEvent("cache_miss", bundle)
     }
 
     /**
-     * Log screen load time
+     * Log cache save operation
+     * Call this when data is saved to cache
      */
-    fun logScreenLoadTime(screenName: String, loadTimeMs: Long) {
+    fun logCacheSave(dataType: String, sizeBytes: Long = 0) {
+        val bundle = Bundle().apply {
+            putString("sport", "football")
+            putString("data_type", dataType)
+            if (sizeBytes > 0) {
+                putLong("size_bytes", sizeBytes)
+            }
+        }
+        analytics.logEvent("cache_save", bundle)
+    }
+
+    /**
+     * Log cache cleanup operation
+     * Call this when expired cache is cleared
+     */
+    fun logCacheCleanup(entriesCleared: Int, bytesFreed: Long = 0) {
+        val bundle = Bundle().apply {
+            putString("sport", "football")
+            putInt("entries_cleared", entriesCleared)
+            if (bytesFreed > 0) {
+                putLong("bytes_freed", bytesFreed)
+            }
+        }
+        analytics.logEvent("cache_cleanup", bundle)
+    }
+
+    /**
+     * Log cache statistics summary
+     * Call this periodically or on app start
+     */
+    fun logCacheStats(
+        totalEntries: Int,
+        validEntries: Int,
+        expiredEntries: Int,
+        cacheSizeMB: Double,
+        hitRate: Float
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport", "football")
+            putInt("total_entries", totalEntries)
+            putInt("valid_entries", validEntries)
+            putInt("expired_entries", expiredEntries)
+            putDouble("cache_size_mb", cacheSizeMB)
+            putDouble("hit_rate_percent", hitRate.toDouble())
+        }
+        analytics.logEvent("cache_stats", bundle)
+
+        // Set cache performance as user property
+        SportsHubApplication.instance.setUserProperty(
+            "cache_hit_rate",
+            "${hitRate.toInt()}%"
+        )
+    }
+
+    /**
+     * Log screen load time with cache status
+     */
+    fun logScreenLoadTime(
+        screenName: String,
+        loadTimeMs: Long,
+        fromCache: Boolean = false
+    ) {
         val bundle = Bundle().apply {
             putString("sport", "football")
             putString(FirebaseAnalytics.Param.SCREEN_NAME, screenName)
             putLong("load_time_ms", loadTimeMs)
+            putBoolean("from_cache", fromCache)
         }
         analytics.logEvent("screen_load_time", bundle)
+    }
+
+    /**
+     * Log data fetch performance
+     * Call this to track API vs Cache performance
+     */
+    fun logDataFetchPerformance(
+        dataType: String,
+        fetchTimeMs: Long,
+        source: String,  // "cache" or "api"
+        resultCount: Int
+    ) {
+        val bundle = Bundle().apply {
+            putString("sport", "football")
+            putString("data_type", dataType)
+            putLong("fetch_time_ms", fetchTimeMs)
+            putString("source", source)
+            putInt("result_count", resultCount)
+        }
+        analytics.logEvent("data_fetch_performance", bundle)
+    }
+
+    /**
+     * Log offline mode usage
+     * Call this when app is used offline with cached data
+     */
+    fun logOfflineUsage(dataType: String, actionPerformed: String) {
+        val bundle = Bundle().apply {
+            putString("sport", "football")
+            putString("data_type", dataType)
+            putString("action", actionPerformed)
+            putBoolean("offline_mode", true)
+        }
+        analytics.logEvent("offline_usage", bundle)
     }
 }

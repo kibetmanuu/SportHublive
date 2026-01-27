@@ -12,6 +12,7 @@ import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.ktx.remoteConfig
 import com.google.firebase.remoteconfig.ktx.remoteConfigSettings
 import ke.nucho.sportshublive.data.api.ApiConfigManager
+import ke.nucho.sportshublive.data.repository.CachedFootballRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,7 +20,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Application class for Football Live Scores
- * Initializes Firebase and API configuration
+ * Initializes Firebase, API configuration, and Repository with Caching
+ *
+ * ✅ ENHANCED: Now includes CachedFootballRepository singleton
  */
 class SportsHubApplication : Application() {
 
@@ -36,6 +39,10 @@ class SportsHubApplication : Application() {
             private set
 
         lateinit var remoteConfig: FirebaseRemoteConfig
+            private set
+
+        // ✅ NEW: Cached Repository Singleton
+        lateinit var cachedRepository: CachedFootballRepository
             private set
     }
 
@@ -64,7 +71,7 @@ class SportsHubApplication : Application() {
             // Initialize Remote Config
             initializeRemoteConfig()
 
-            // Initialize API Config Manager
+            // ✅ Initialize API Config Manager and Cached Repository
             initializeApiConfig()
 
             // Log app start
@@ -200,35 +207,65 @@ class SportsHubApplication : Application() {
     }
 
     /**
-     * Initialize API Config Manager
+     * Initialize API Config Manager and Cached Repository
+     * ✅ ENHANCED: Now includes CachedFootballRepository initialization
      */
     private fun initializeApiConfig() {
         try {
+            Log.d(TAG, "🔧 Initializing API Config and Repository...")
+
+            // Initialize API Config Manager
             apiConfigManager = ApiConfigManager()
+
+            // ✅ Initialize Cached Repository (with Firestore offline persistence)
+            cachedRepository = CachedFootballRepository(apiConfigManager)
+            Log.d(TAG, "✓ Cached Repository initialized")
 
             // Fetch and activate config asynchronously
             applicationScope.launch {
-                val success = apiConfigManager.fetchAndActivate()
-                if (success) {
-                    val config = apiConfigManager.getApiConfig()
-                    config.onSuccess {
-                        Log.d(TAG, "✓ API Config loaded: ${it.provider}")
-                        Log.d(TAG, "✓ Base URL: ${it.baseUrl}")
-                        Log.d(TAG, "✓ Rate Limit: ${it.rateLimitPerMinute}/min")
+                try {
+                    val success = apiConfigManager.fetchAndActivate()
+                    if (success) {
+                        val config = apiConfigManager.getApiConfig()
+                        config.onSuccess {
+                            Log.d(TAG, "✓ API Config loaded: ${it.provider}")
+                            Log.d(TAG, "✓ Base URL: ${it.baseUrl}")
+                            Log.d(TAG, "✓ Rate Limit: ${it.rateLimitPerMinute}/min")
 
-                        // Log feature availability
-                        logFeatureAvailability(it.features)
-                    }.onFailure {
-                        Log.e(TAG, "✗ Failed to load API config", it)
+                            // Log feature availability
+                            logFeatureAvailability(it.features)
+                        }.onFailure {
+                            Log.e(TAG, "✗ Failed to load API config", it)
+                        }
+                    } else {
+                        Log.w(TAG, "⚠ Using default API config")
                     }
-                } else {
-                    Log.w(TAG, "⚠ Using default API config")
+
+                    // ✅ Log cache stats on startup
+                    val stats = cachedRepository.getCacheStats()
+                    Log.d(TAG, "📊 Cache Stats on Startup:")
+                    Log.d(TAG, "   Total entries: ${stats.totalEntries}")
+                    Log.d(TAG, "   Valid: ${stats.validEntries}")
+                    Log.d(TAG, "   Expired: ${stats.expiredEntries}")
+                    Log.d(TAG, "   Size: ${String.format("%.2f", stats.cacheSizeMB)} MB")
+                    Log.d(TAG, "   Hit Rate: ${String.format("%.1f", stats.hitRate)}%")
+
+                    // ✅ Clear expired cache on startup
+                    val expiredCount = cachedRepository.clearExpiredCache()
+                    if (expiredCount > 0) {
+                        Log.d(TAG, "🧹 Cleared $expiredCount expired cache entries")
+                    }
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Failed to initialize API config/cache", e)
+                    FirebaseCrashlytics.getInstance().recordException(e)
                 }
             }
 
             Log.d(TAG, "✓ API Config Manager initialized")
         } catch (e: Exception) {
             Log.e(TAG, "✗ API Config Manager initialization failed", e)
+            FirebaseCrashlytics.getInstance().recordException(e)
         }
     }
 
@@ -365,6 +402,37 @@ class SportsHubApplication : Application() {
             }
         } else {
             "API Config not loaded"
+        }
+    }
+
+    /**
+     * ✅ NEW: Get cache statistics for debugging
+     */
+    suspend fun getCacheDebugInfo(): String {
+        return try {
+            val stats = cachedRepository.getCacheStats()
+            buildString {
+                appendLine("Cache Statistics:")
+                appendLine("  Total Entries: ${stats.totalEntries}")
+                appendLine("  Valid: ${stats.validEntries}")
+                appendLine("  Expired: ${stats.expiredEntries}")
+                appendLine("  Size: ${String.format("%.2f", stats.cacheSizeMB)} MB")
+                appendLine("  Hit Rate: ${String.format("%.1f", stats.hitRate)}%")
+            }
+        } catch (e: Exception) {
+            "Cache stats unavailable: ${e.message}"
+        }
+    }
+
+    /**
+     * ✅ NEW: Clear all cache (for settings/debugging)
+     */
+    suspend fun clearAllCache(): Int {
+        return try {
+            cachedRepository.clearAllCache()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear cache", e)
+            0
         }
     }
 }

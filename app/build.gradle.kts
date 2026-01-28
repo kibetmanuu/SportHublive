@@ -108,6 +108,9 @@ dependencies {
     // ==================== IMAGE LOADING ====================
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    implementation("androidx.media3:media3-exoplayer:1.2.0")
+    implementation("androidx.media3:media3-ui:1.2.0")
+
     // ==================== FIREBASE ====================
     val firebaseBom = platform("com.google.firebase:firebase-bom:33.7.0")
     implementation(firebaseBom)

@@ -14,7 +14,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import ke.nucho.sportshublive.ui.leaguedetail.LeagueDetailScreen
+import ke.nucho.sportshublive.ui.highlights.MatchHighlightsScreen
+import ke.nucho.sportshublive.ui.highlights.VideoScreen
+import ke.nucho.sportshublive.ui.highlights.getSampleHighlights
 import ke.nucho.sportshublive.ui.main.MainScreen
 import ke.nucho.sportshublive.ui.matchdetail.MatchDetailScreen
 import ke.nucho.sportshublive.ui.theme.SportsHubLiveTheme
@@ -55,6 +57,9 @@ fun FootballNavigation() {
             MainScreen(
                 onMatchClick = { fixtureId ->
                     navController.navigate("match_detail/$fixtureId")
+                },
+                onHighlightsClick = {
+                    navController.navigate("highlights")
                 }
             )
         }
@@ -74,6 +79,43 @@ fun FootballNavigation() {
                 }
             )
         }
+
+        // Match Highlights Screen
+        composable("highlights") {
+            MatchHighlightsScreen(
+                onVideoClick = { highlight ->
+                    navController.navigate("video/${highlight.id}")
+                }
+            )
+        }
+
+        // Video Player Screen
+        composable(
+            route = "video/{videoId}",
+            arguments = listOf(
+                navArgument("videoId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val videoId = backStackEntry.arguments?.getString("videoId")
+
+            // Find the video highlight by ID from sample data
+            // In production, this would come from your ViewModel/Repository
+            val highlight = getSampleHighlights().find { it.id == videoId }
+
+            highlight?.let {
+                VideoScreen(
+                    videoHighlight = it,
+                    onBackClick = {
+                        navController.navigateUp()
+                    },
+                    onVideoClick = { newHighlight ->
+                        // Navigate to another video
+                        navController.navigate("video/${newHighlight.id}") {
+                            popUpTo("video/{videoId}") { inclusive = true }
+                        }
+                    }
+                )
+            }
+        }
     }
 }
-

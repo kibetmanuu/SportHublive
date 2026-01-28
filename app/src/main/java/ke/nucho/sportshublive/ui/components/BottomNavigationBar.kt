@@ -40,11 +40,11 @@ sealed class NavigationItem(
         label = "Leagues"
     )
 
-    object Favorites : NavigationItem(
-        route = "favorites",
-        selectedIcon = Icons.Filled.Star,
-        unselectedIcon = Icons.Outlined.StarBorder,
-        label = "Favorites"
+    object Highlights : NavigationItem(
+        route = "highlights",
+        selectedIcon = Icons.Filled.VideoLibrary,
+        unselectedIcon = Icons.Outlined.VideoLibrary,
+        label = "Highlights"
     )
 }
 
@@ -58,7 +58,7 @@ fun SportsBottomNavigationBar(
         NavigationItem.Predictions,
         NavigationItem.Matches,
         NavigationItem.Leagues,
-        NavigationItem.Favorites
+        NavigationItem.Highlights
     )
 
     NavigationBar(
@@ -67,7 +67,8 @@ fun SportsBottomNavigationBar(
         tonalElevation = 8.dp
     ) {
         items.forEach { item ->
-            val isSelected = currentRoute == item.route
+            val isSelected = currentRoute == item.route ||
+                    (item.route == "highlights" && currentRoute == "favorites")
 
             NavigationBarItem(
                 icon = {

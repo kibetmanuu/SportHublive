@@ -12,13 +12,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ke.nucho.sportshublive.ui.components.SportsBottomNavigationBar
+import ke.nucho.sportshublive.ui.highlights.MatchHighlightsScreen
 import ke.nucho.sportshublive.ui.leaguedetail.LeagueDetailScreen
 import ke.nucho.sportshublive.ui.leagues.LeaguesScreen
 import ke.nucho.sportshublive.ui.livescores.LiveScoresScreen
 
 @Composable
 fun MainScreen(
-    onMatchClick: (fixtureId: Int) -> Unit = {}
+    onMatchClick: (fixtureId: Int) -> Unit = {},
+    onHighlightsClick: () -> Unit
 ) {
     var currentRoute by remember { mutableStateOf("matches") }
     var selectedLeague by remember { mutableStateOf<LeagueSelection?>(null) }
@@ -61,10 +63,16 @@ fun MainScreen(
                             selectedLeague = LeagueSelection(leagueId, leagueName, leagueLogo)
                         }
                     )
-                    "favorites" -> PlaceholderScreen(
-                        title = "Favorites",
-                        message = "Your Saved Content",
-                        description = "Save your favorite teams,\nmatches, and leagues here"
+                    "favorites" -> MatchHighlightsScreen(
+                        onVideoClick = { highlight ->
+                            // For now, do nothing when video is clicked
+                            // We'll add video player later
+                        }
+                    )
+                    "highlights" -> MatchHighlightsScreen(
+                        onVideoClick = { highlight ->
+                            // For now, do nothing when video is clicked
+                        }
                     )
                 }
             }
